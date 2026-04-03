@@ -148,7 +148,7 @@ flutter run
 
 **Nur Fatini binti Mahamad Razali**
 Matric Number: 301193
-Universiti Malaysia Perlis (UniMAP)
+Universiti Utara Malaysia
 
 **Supervisor:** Suwannit Chareen Chit A/L Sop Chit
 
