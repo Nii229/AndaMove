@@ -46,4 +46,3 @@ app.*.map.json
 *.mov
 *.mp4
 *.MP4
-assets/images/*.jpg
