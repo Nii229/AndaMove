@@ -1,0 +1,60 @@
+name: andamove
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  firebase_core: ^4.1.1
+  firebase_auth: ^6.0.2
+  cloud_firestore: ^6.0.1
+  google_fonts: ^6.2.1
+  http: ^1.2.1
+  video_player: ^2.11.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/andamove_logo.png
+    - assets/images/atv_&_zipline.jpg
+    - assets/images/bangla_road.jpg
+    - assets/images/blue_elephant_restaurant.jpg
+    - assets/images/central_festival_phuket.jpg
+    - assets/images/freedom_beach.jpg
+    - assets/images/illuzion_club.jpg
+    - assets/images/jungceylon.jpg
+    - assets/images/karon_viewpoint.jpg
+    - assets/images/kata_beach.jpg
+    - assets/images/koh_sirey.jpg
+    - assets/images/nai_harn_beach.jpg
+    - assets/images/old_phuket_town.jpg
+    - assets/images/patong_beach.jpg
+    - assets/images/phi_phi_island.jpg
+    - assets/images/phuket_aquarium.jpg
+    - assets/images/phuket_elephant_sanctuary.jpg
+    - assets/images/phuket_fantasea.jpg
+    - assets/images/phuket_town_walking_street.jpg
+    - assets/images/promthep_cape.jpg
+    - assets/images/rawai_seafood_market.jpg
+    - assets/images/sirinat_national_park.jpg
+    - assets/images/surin_beach.jpg
+    - assets/images/thalang_national_museum.jpg
+    - assets/images/the_big_buddha.jpg
+    - assets/images/tiger_kingdom.jpg
+    - assets/images/wat_chalong.jpg
+    - assets/videos/kata_beach.mov
+    - assets/videos/big_buddha.mov
+    - assets/videos/khao_phra_thaeo.mov
+    - assets/videos/promthep_cave.mov
+    - assets/videos/old_phuket_town.mov
