@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>API_KEY</key>
-	<string>AIzaSyBc_DxzrOPmzWulcI-Dvr113JMNkOK1t8A</string>
+	<string>AIzaSyCRbiO6pRDF9UTHers956fFe6OiIfsSOd4</string>
 	<key>GCM_SENDER_ID</key>
-	<string>22384930715</string>
+	<string>841490797865</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
 	<string>com.example.andamove</string>
 	<key>PROJECT_ID</key>
-	<string>andamove-cc307</string>
+	<string>andamove-31abc</string>
 	<key>STORAGE_BUCKET</key>
-	<string>andamove-cc307.firebasestorage.app</string>
+	<string>andamove-31abc.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
 	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:22384930715:ios:21c250cc7a7cd26f48bb3e</string>
+	<string>1:841490797865:ios:215918afdc39ee9fb2d338</string>
 </dict>
 </plist>

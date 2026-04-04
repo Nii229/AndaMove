@@ -2,17 +2,16 @@
 // AndaMove — Forgot Password Screen
 // File: lib/screens/screen4_forgotPassword.dart
 //
-// Fixes:
-//   1. Logo enlarged + "AndaMove" uses Playfair Display with
-//      gold gradient on "Move" — matches login/register style
-//   2. Weird middle box removed — replaced with a clean
-//      ocean-tint info card
-//   3. Send Reset Link button uses Positioned.fill pattern
-//      so it fills the full 54px height correctly
+// UPDATED:
+//   - Firebase Auth password reset email
+//   - Loading state
+//   - Error handling with friendly messages
+//   - Resend link wired to Firebase too
 // ============================================================
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'screen2_login.dart';
 
 // ── COLOR TOKENS ─────────────────────────────────────────────
@@ -67,10 +66,13 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     with SingleTickerProviderStateMixin {
   final _emailCtrl = TextEditingController();
-  bool _submitted = false;
+  bool _submitted  = false;
+  bool _isLoading  = false;
 
   late final AnimationController _sheenCtrl;
   late final Animation<double> _sheenAnim;
+
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   @override
   void initState() {
@@ -92,9 +94,75 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     super.dispose();
   }
 
-  void _onSend() {
-    if (_emailCtrl.text.trim().isEmpty) return;
-    setState(() => _submitted = true);
+  // ── SHOW ERROR SNACKBAR ──────────────────────────────────
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message,
+            style: GoogleFonts.outfit(
+                fontSize: 13, fontWeight: FontWeight.w500)),
+        backgroundColor: AppColors.coral,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  // ── SEND RESET EMAIL ─────────────────────────────────────
+  Future<void> _onSend() async {
+    final email = _emailCtrl.text.trim();
+
+    if (email.isEmpty) {
+      _showError('Please enter your email address');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+
+      if (mounted) {
+        setState(() {
+          _submitted = true;
+          _isLoading = false;
+        });
+      }
+    } on FirebaseAuthException catch (e) {
+      String msg;
+      switch (e.code) {
+        case 'user-not-found':
+          msg = 'No account found with this email';
+          break;
+        case 'invalid-email':
+          msg = 'Please enter a valid email address';
+          break;
+        case 'too-many-requests':
+          msg = 'Too many attempts. Please try again later';
+          break;
+        default:
+          msg = e.message ?? 'Something went wrong. Please try again';
+      }
+      if (mounted) {
+        _showError(msg);
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError('Something went wrong. Please try again');
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  // ── RESEND RESET EMAIL ───────────────────────────────────
+  Future<void> _onResend() async {
+    setState(() => _submitted = false);
+    // Small delay so user sees the form again before auto-sending
+    await Future.delayed(const Duration(milliseconds: 300));
+    _onSend();
   }
 
   @override
@@ -103,16 +171,34 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
       backgroundColor: AppColors.bg,
       resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            // ── FIX 1: header with proper AndaMove branding ──
-            _buildHeader(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(28, 60, 28, 32),
-                child: _submitted ? _buildSuccessState() : _buildFormState(),
-              ),
+            Column(
+              children: [
+                _buildHeader(),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(28, 60, 28, 32),
+                    child: _submitted
+                        ? _buildSuccessState()
+                        : _buildFormState(),
+                  ),
+                ),
+              ],
             ),
+            // ── Loading overlay ──
+            if (_isLoading)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black.withOpacity(0.25),
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.oceanDeep,
+                      strokeWidth: 3,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -151,7 +237,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Logo with whitespace cropped
               ClipRect(
                 child: Align(
                   alignment: Alignment.topCenter,
@@ -178,7 +263,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
               ),
               const SizedBox(width: 8),
 
-              // "AndaMove" — baseline Row (no WidgetSpan misalignment)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
@@ -335,7 +419,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         ),
         const SizedBox(height: 14),
 
-        // FIX 2 — Clean info card (replaces the weird banner)
+        // Info card
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -368,7 +452,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         ),
         const SizedBox(height: 24),
 
-        // FIX 3 — Send Reset Link button (Positioned.fill pattern)
+        // Send Reset Link button
         _buildCtaButton(),
         const SizedBox(height: 20),
 
@@ -400,7 +484,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
   }
 
   // ══════════════════════════════════════════════════════════
-  // SUCCESS STATE — shown after tapping Send
+  // SUCCESS STATE
   // ══════════════════════════════════════════════════════════
   Widget _buildSuccessState() {
     return Column(
@@ -500,9 +584,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
         ),
         const SizedBox(height: 16),
 
-        // Resend link
+        // Resend link — now wired to Firebase
         GestureDetector(
-          onTap: () => setState(() => _submitted = false),
+          onTap: _isLoading ? null : _onResend,
           child: Text(
             'Resend reset link',
             style: GoogleFonts.outfit(
@@ -517,7 +601,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
   }
 
   // ══════════════════════════════════════════════════════════
-  // FIX 3 — CTA BUTTON (Positioned.fill so full height fills)
+  // CTA BUTTON
   // ══════════════════════════════════════════════════════════
   Widget _buildCtaButton({String? label, IconData? icon, VoidCallback? onTap}) {
     final btnLabel = label ?? 'Send Reset Link';
@@ -550,12 +634,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                   ),
                 ),
               ),
-              // Button content — fills full 54px
+              // Button content
               Positioned.fill(
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
-                    onTap: btnTap,
+                    onTap: _isLoading ? null : btnTap,
                     splashColor: Colors.white.withOpacity(0.10),
                     borderRadius: BorderRadius.circular(AppRadius.full),
                     child: Row(

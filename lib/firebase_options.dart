@@ -50,19 +50,19 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBfv4i95puxcspTqEiFYGKWp9FdTxCI07g',
-    appId: '1:22384930715:android:adf6c1eb3bb75d5648bb3e',
-    messagingSenderId: '22384930715',
-    projectId: 'andamove-cc307',
-    storageBucket: 'andamove-cc307.firebasestorage.app',
+    apiKey: 'AIzaSyApHOoxlrnfg0BwofsxqJALC3YDtuycews',
+    appId: '1:841490797865:android:ca6910cfa7b6eb50b2d338',
+    messagingSenderId: '841490797865',
+    projectId: 'andamove-31abc',
+    storageBucket: 'andamove-31abc.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBc_DxzrOPmzWulcI-Dvr113JMNkOK1t8A',
-    appId: '1:22384930715:ios:21c250cc7a7cd26f48bb3e',
-    messagingSenderId: '22384930715',
-    projectId: 'andamove-cc307',
-    storageBucket: 'andamove-cc307.firebasestorage.app',
+    apiKey: 'AIzaSyCRbiO6pRDF9UTHers956fFe6OiIfsSOd4',
+    appId: '1:841490797865:ios:215918afdc39ee9fb2d338',
+    messagingSenderId: '841490797865',
+    projectId: 'andamove-31abc',
+    storageBucket: 'andamove-31abc.firebasestorage.app',
     iosBundleId: 'com.example.andamove',
   );
 

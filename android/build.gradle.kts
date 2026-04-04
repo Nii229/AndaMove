@@ -1,11 +1,3 @@
-plugins {
-    id("com.android.application") version "..." apply false
-    id("com.android.library") version "..." apply false
-    id("org.jetbrains.kotlin.android") version "..." apply false
-
-    id("com.google.gms.google-services") version "4.4.2" apply false
-}
-
 allprojects {
     repositories {
         google()

@@ -2,17 +2,21 @@
 // AndaMove — Register Screen
 // File: lib/screens/screen3_register.dart
 //
-// Hero panel updated to match screen2_login:
-//   • Height 340px (was 220px)
-//   • Vertical layout: logo on top → "AndaMove" → subtitle
-//   • ClipRect logo crop + Transform.translate gap fix
-//   • Same gold glow, horizon line, stars, wave cutout
+// UPDATED:
+//   - Firebase Auth for email/password registration
+//   - Firestore user profile creation on signup
+//   - Validation for all fields
+//   - Loading state with overlay
+//   - Error handling with friendly messages
 // ============================================================
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'screen2_login.dart';
+import 'screen5_home.dart';
 
 // ── COLOR TOKENS ─────────────────────────────────────────────
 class AppColors {
@@ -77,6 +81,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   bool    _obscurePass    = true;
   bool    _termsAccepted  = true;
+  bool    _isLoading      = false;
   String? _selectedCountry;
 
   PasswordStrength get _strength => _evalStrength(_passwordCtrl.text);
@@ -85,6 +90,9 @@ class _RegisterScreenState extends State<RegisterScreen>
   late final Animation<double>   _sheenAnim;
 
   final int _currentStep = 2;
+
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   @override
   void initState() {
@@ -106,23 +114,159 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.dispose();
   }
 
+  // ── SHOW ERROR SNACKBAR ──────────────────────────────────
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message,
+            style: GoogleFonts.outfit(
+                fontSize: 13, fontWeight: FontWeight.w500)),
+        backgroundColor: AppColors.coral,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  // ── SHOW SUCCESS SNACKBAR ────────────────────────────────
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message,
+            style: GoogleFonts.outfit(
+                fontSize: 13, fontWeight: FontWeight.w500)),
+        backgroundColor: const Color(0xFF22C55E),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  // ── REGISTER HANDLER ─────────────────────────────────────
+  Future<void> _handleRegister() async {
+    final name     = _nameCtrl.text.trim();
+    final email    = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text.trim();
+
+    // ── Validation ──
+    if (name.isEmpty) {
+      _showError('Please enter your full name');
+      return;
+    }
+    if (email.isEmpty) {
+      _showError('Please enter your email address');
+      return;
+    }
+    if (password.isEmpty) {
+      _showError('Please enter a password');
+      return;
+    }
+    if (password.length < 8) {
+      _showError('Password must be at least 8 characters');
+      return;
+    }
+    if (_selectedCountry == null) {
+      _showError('Please select your home country');
+      return;
+    }
+    if (!_termsAccepted) {
+      _showError('Please accept the Terms of Service');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // ── 1. Create Firebase Auth user ──
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      // ── 2. Update display name in Firebase Auth ──
+      await credential.user?.updateDisplayName(name);
+
+      // ── 3. Create user profile in Firestore ──
+      await _firestore.collection('users').doc(credential.user!.uid).set({
+        'name':        name,
+        'email':       email,
+        'country':     _selectedCountry,
+        'createdAt':   FieldValue.serverTimestamp(),
+        'photoUrl':    '',
+        'savedPois':   [],
+        'tripsCount':  0,
+      });
+
+      if (mounted) {
+        _showSuccess('Account created! Welcome to AndaMove');
+
+        // ── Navigate to Home screen ──
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      String msg;
+      switch (e.code) {
+        case 'email-already-in-use':
+          msg = 'An account already exists with this email';
+          break;
+        case 'invalid-email':
+          msg = 'Please enter a valid email address';
+          break;
+        case 'weak-password':
+          msg = 'Password is too weak. Please use a stronger one';
+          break;
+        default:
+          msg = e.message ?? 'Registration failed. Please try again';
+      }
+      if (mounted) _showError(msg);
+    } catch (e) {
+      if (mounted) _showError('Something went wrong. Please try again');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
       resizeToAvoidBottomInset: true,
-      body: Column(
+      body: Stack(
         children: [
-          _buildHeroPanel(),
-          Expanded(child: _buildFormPanel()),
+          Column(
+            children: [
+              _buildHeroPanel(),
+              Expanded(child: _buildFormPanel()),
+            ],
+          ),
+          // ── Loading overlay ──
+          if (_isLoading)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.25),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.oceanDeep,
+                    strokeWidth: 3,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
   // ══════════════════════════════════════════════════════════
-  // HERO PANEL — now matches screen2_login exactly
-  // 340px tall, vertical layout, ClipRect logo
+  // HERO PANEL — matches screen2_login exactly
   // ══════════════════════════════════════════════════════════
   Widget _buildHeroPanel() {
     const double heroH = 340;
@@ -131,7 +275,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       height: heroH,
       child: Stack(
         children: [
-          // ① Background gradient (identical to login)
+          // ① Background gradient
           Positioned.fill(
             child: Container(
               decoration: const BoxDecoration(
@@ -155,7 +299,7 @@ class _RegisterScreenState extends State<RegisterScreen>
             child: CustomPaint(painter: RegisterStarsPainter()),
           ),
 
-          // ③ Gold glow (same as login — centered behind logo)
+          // ③ Gold glow
           Positioned(
             top: 0, bottom: 80, left: 0, right: 0,
             child: Center(
@@ -196,7 +340,7 @@ class _RegisterScreenState extends State<RegisterScreen>
             ),
           ),
 
-          // ⑤ Brand block — vertical, pinned from top (same as login)
+          // ⑤ Brand block
           Positioned(
             top: 30,
             left: 0, right: 0,
@@ -223,7 +367,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  // ── Hero brand — vertical layout matching login ───────────
+  // ── Hero brand ──────────────────────────────────────────
   Widget _buildHeroBrand() {
     final baseStyle = GoogleFonts.playfairDisplay(
       fontSize: 32,
@@ -236,7 +380,6 @@ class _RegisterScreenState extends State<RegisterScreen>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Logo with ClipRect to crop built-in whitespace
         ClipRect(
           child: Align(
             alignment: Alignment.topCenter,
@@ -251,7 +394,6 @@ class _RegisterScreenState extends State<RegisterScreen>
           ),
         ),
 
-        // "AndaMove" pulled up to close the gap
         Transform.translate(
           offset: const Offset(0, -8),
           child: Row(
@@ -282,7 +424,6 @@ class _RegisterScreenState extends State<RegisterScreen>
           ),
         ),
 
-        // Subtitle
         Transform.translate(
           offset: const Offset(0, -6),
           child: Text(
@@ -594,6 +735,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
+  // ── CTA BUTTON — now calls _handleRegister() ──────────
   Widget _buildCtaButton() {
     return Container(
       width: double.infinity,
@@ -620,15 +762,13 @@ class _RegisterScreenState extends State<RegisterScreen>
                 ),
               ),
             ),
-            // Button content — fills the full 54px height
+            // Button content
             Positioned.fill(
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  onTap: _termsAccepted
-                      ? () => Navigator.pushReplacement(context,
-                          MaterialPageRoute(
-                              builder: (_) => const LoginScreen()))
+                  onTap: (_termsAccepted && !_isLoading)
+                      ? _handleRegister
                       : null,
                   splashColor: Colors.white.withOpacity(0.1),
                   child: Row(

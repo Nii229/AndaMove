@@ -1,26 +1,51 @@
 {
   "project_info": {
-    "project_number": "22384930715",
-    "project_id": "andamove-cc307",
-    "storage_bucket": "andamove-cc307.firebasestorage.app"
+    "project_number": "841490797865",
+    "project_id": "andamove-31abc",
+    "storage_bucket": "andamove-31abc.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:22384930715:android:adf6c1eb3bb75d5648bb3e",
+        "mobilesdk_app_id": "1:841490797865:android:ca6910cfa7b6eb50b2d338",
         "android_client_info": {
           "package_name": "com.niildamanee.andamove"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "841490797865-gvqlvs9shm64eb9dujguia9f2vsa714a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.niildamanee.andamove",
+            "certificate_hash": "d6d5ae6b4e017af4a3b4c7e8ee65074415abb5b5"
+          }
+        },
+        {
+          "client_id": "841490797865-hn2q520oijb23kctl5849sm5393h2ktp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyBfv4i95puxcspTqEiFYGKWp9FdTxCI07g"
+          "current_key": "AIzaSyApHOoxlrnfg0BwofsxqJALC3YDtuycews"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "841490797865-hn2q520oijb23kctl5849sm5393h2ktp.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "841490797865-v8jfrjqi0h87ebknqsgbjqrv0tgvn72p.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.andamove"
+              }
+            }
+          ]
         }
       }
     }

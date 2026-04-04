@@ -2,14 +2,17 @@
 // AndaMove — Login Screen
 // File: lib/screens/screen2_login.dart
 //
-// UPDATED: Added admin email detection.
-//   If email == 'admin@andamove.com' → AdminDashboardScreen
-//   Otherwise → tourist HomeScreen (default behaviour)
+// UPDATED: 
+//   - Firebase Auth for email/password login
+//   - Google Sign-In button
+//   - Admin email detection routes to AdminDashboardScreen
 // ============================================================
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'screen3_register.dart';
 import 'screen4_forgotPassword.dart';
 import 'screen5_home.dart';
@@ -73,9 +76,12 @@ class _LoginScreenState extends State<LoginScreen>
   final _emailCtrl    = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool  _obscurePass  = true;
+  bool  _isLoading    = false;
 
   late final AnimationController _sheenCtrl;
   late final Animation<double>   _sheenAnim;
+
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   @override
   void initState() {
@@ -85,6 +91,7 @@ class _LoginScreenState extends State<LoginScreen>
       ..repeat();
     _sheenAnim = Tween<double>(begin: -1.5, end: 2.5).animate(
         CurvedAnimation(parent: _sheenCtrl, curve: Curves.easeInOut));
+    GoogleSignIn.instance.initialize();
   }
 
   @override
@@ -95,22 +102,15 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  // ── LOGIN HANDLER (checks admin vs tourist) ──────────────
-  void _handleLogin() {
-    final email = _emailCtrl.text.trim().toLowerCase();
-
-    if (email == _adminEmail) {
-      // ═══ ADMIN ROUTE ═══
-      // pushAndRemoveUntil clears the nav stack so the admin
-      // can't swipe-back to the login screen.
+  // ── ROUTE BASED ON EMAIL ─────────────────────────────────
+  void _routeUser(String email) {
+    if (email.toLowerCase() == _adminEmail) {
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(
-            builder: (_) => const AdminDashboardScreen()),
+        MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
         (_) => false,
       );
     } else {
-      // ═══ TOURIST ROUTE (default) ═══
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
@@ -119,15 +119,129 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  // ── SHOW ERROR SNACKBAR ──────────────────────────────────
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message,
+            style: GoogleFonts.outfit(
+                fontSize: 13, fontWeight: FontWeight.w500)),
+        backgroundColor: AppColors.coral,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  // ── EMAIL/PASSWORD LOGIN ─────────────────────────────────
+  Future<void> _handleLogin() async {
+    final email    = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      _showError('Please enter your email and password');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      if (mounted) _routeUser(credential.user?.email ?? email);
+    } on FirebaseAuthException catch (e) {
+      String msg;
+      switch (e.code) {
+        case 'user-not-found':
+          msg = 'No account found with this email';
+          break;
+        case 'wrong-password':
+          msg = 'Incorrect password. Please try again';
+          break;
+        case 'invalid-email':
+          msg = 'Please enter a valid email address';
+          break;
+        case 'invalid-credential':
+          msg = 'Invalid email or password. Please try again';
+          break;
+        case 'too-many-requests':
+          msg = 'Too many attempts. Please try again later';
+          break;
+        default:
+          msg = e.message ?? 'Login failed. Please try again';
+      }
+      if (mounted) _showError(msg);
+    } catch (e) {
+      if (mounted) _showError('Something went wrong. Please try again');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ── GOOGLE SIGN-IN ───────────────────────────────────────
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _isLoading = true);
+
+    try {
+      // v7 API: use GoogleSignIn.instance.authenticate()
+      final GoogleSignInAccount googleUser =
+          await GoogleSignIn.instance.authenticate();
+
+      final GoogleSignInAuthentication googleAuth =
+          googleUser.authentication;
+
+      // v7: authentication only provides idToken; accessToken removed
+      final credential = GoogleAuthProvider.credential(
+        idToken: googleAuth.idToken,
+      );
+
+      final userCredential =
+          await _auth.signInWithCredential(credential);
+
+      if (mounted) {
+        _routeUser(userCredential.user?.email ?? '');
+      }
+    } on GoogleSignInException catch (e) {
+      // Cancelled by user — not an error
+      if (e.code == GoogleSignInExceptionCode.canceled) return;
+      if (mounted) _showError('Google sign-in failed. Please try again');
+    } catch (e) {
+      if (mounted) _showError('Google sign-in failed. Please try again');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
       resizeToAvoidBottomInset: true,
-      body: Column(
+      body: Stack(
         children: [
-          _buildHeroPanel(),
-          Expanded(child: _buildFormPanel()),
+          Column(
+            children: [
+              _buildHeroPanel(),
+              Expanded(child: _buildFormPanel()),
+            ],
+          ),
+          // ── Loading overlay ──
+          if (_isLoading)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.25),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.oceanDeep,
+                    strokeWidth: 3,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -328,6 +442,10 @@ class _LoginScreenState extends State<LoginScreen>
           _buildPasswordField(),
           const SizedBox(height: 20),
           _buildCtaButton(),
+          const SizedBox(height: 16),
+          _buildDividerRow(),
+          const SizedBox(height: 16),
+          _buildGoogleButton(),
           const SizedBox(height: 20),
           _buildRegisterRow(),
         ],
@@ -465,7 +583,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // ── CTA BUTTON — now calls _handleLogin() ──────────────
+  // ── CTA BUTTON ─────────────────────────────────────────
   Widget _buildCtaButton() {
     return Container(
       width: double.infinity,
@@ -483,7 +601,7 @@ class _LoginScreenState extends State<LoginScreen>
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.full),
-          onTap: _handleLogin,  // ← CHANGED: was inline Navigator.push
+          onTap: _isLoading ? null : _handleLogin,
           child: Center(
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -497,6 +615,98 @@ class _LoginScreenState extends State<LoginScreen>
                 const SizedBox(width: 8),
                 const Icon(Icons.explore_rounded,
                     color: Colors.white, size: 19),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── "OR" DIVIDER ───────────────────────────────────────
+  Widget _buildDividerRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 1,
+            color: AppColors.border,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'or',
+            style: GoogleFonts.outfit(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: AppColors.text3,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Container(
+            height: 1,
+            color: AppColors.border,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── GOOGLE SIGN-IN BUTTON ──────────────────────────────
+  Widget _buildGoogleButton() {
+    return Container(
+      width: double.infinity,
+      height: 54,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.full),
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.border, width: 1.5),
+        boxShadow: shadowSm,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.full),
+          onTap: _isLoading ? null : _handleGoogleSignIn,
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── Google "G" logo using text ──
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppColors.border,
+                      width: 1,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      'G',
+                      style: GoogleFonts.outfit(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.text1,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Continue with Google',
+                  style: GoogleFonts.outfit(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.text1,
+                    letterSpacing: 0.3,
+                  ),
+                ),
               ],
             ),
           ),
