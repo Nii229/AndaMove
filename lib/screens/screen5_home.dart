@@ -5,6 +5,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'screen13_notification.dart';
 import 'screen14_explore.dart';
 import 'screen6_POI.dart';
@@ -151,6 +152,26 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ADD this method inside _HomeScreenState (e.g. after _searchQuery declarations):
   void _onStoreUpdate() => setState(() {});
+
+  String get _userName {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      if (user.displayName != null && user.displayName!.isNotEmpty) {
+        return user.displayName!.split(' ').first;
+      }
+      if (user.email != null) {
+        return user.email!.split('@').first;
+      }
+    }
+    return 'Explorer';
+  }
+
+  String get _greetingLabel {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'GOOD MORNING';
+    if (hour < 17) return 'GOOD AFTERNOON';
+    return 'GOOD EVENING';
+  }
 
   @override
   void initState() {
@@ -1141,7 +1162,7 @@ class _HomeScreenState extends State<HomeScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'GOOD MORNING',
+                      _greetingLabel,
                       style: GoogleFonts.outfit(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -1151,7 +1172,7 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Sawasdee, Alex! 🌴',
+                      'Sawasdee, $_userName! 🌴',
                       style: GoogleFonts.playfairDisplay(
                         fontSize: 22,
                         fontWeight: FontWeight.w700,

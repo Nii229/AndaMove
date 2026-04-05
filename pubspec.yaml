@@ -29,6 +29,11 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/andamove_logo.png
+    - assets/images/cover_kata.jpg
+    - assets/images/cover_bigBuddha.jpg
+    - assets/images/cover_jungle.jpg
+    - assets/images/cover_promthep.jpg
+    - assets/images/cover_oldTown.jpg
     - assets/images/atv_&_zipline.jpg
     - assets/images/bangla_road.jpg
     - assets/images/blue_elephant_restaurant.jpg

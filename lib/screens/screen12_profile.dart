@@ -23,6 +23,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../app_store.dart';
 import 'screen14_explore.dart';
 import 'screen6_POI.dart';
@@ -108,13 +110,48 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
-  // ── Editable personal info ───────────────────────────────
-  PersonalInfo _personalInfo = const PersonalInfo(
-    fullName: 'Alex Tanaka',
-    email: 'alex@andamove.app',
-    phone: '+60 12-345 6789',
-    country: 'Malaysia 🇲🇾',
-  );
+
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  Map<String, dynamic>? _userData;
+
+  // Country code to display name mapping
+  static const _countryNames = {
+    'MY': 'Malaysia 🇲🇾',
+    'TH': 'Thailand 🇹🇭',
+    'US': 'United States 🇺🇸',
+    'UK': 'United Kingdom 🇬🇧',
+    'AU': 'Australia 🇦🇺',
+    'SG': 'Singapore 🇸🇬',
+  };
+
+  PersonalInfo get _personalInfo {
+    final user = _auth.currentUser;
+    final name = _userData?['name'] ?? user?.displayName ?? 'Explorer';
+    final email = user?.email ?? 'Not set';
+    final phone = _userData?['phone'] ?? 'Not set';
+    final countryCode = _userData?['country'] ?? '';
+    final country = _countryNames[countryCode] ?? countryCode;
+    return PersonalInfo(
+      fullName: name,
+      email: email,
+      phone: phone,
+      country: country.isEmpty ? 'Not set' : country,
+    );
+  }
+
+  Future<void> _loadUserData() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      try {
+        final doc = await _firestore.collection('users').doc(user.uid).get();
+        if (doc.exists && mounted) {
+          setState(() => _userData = doc.data());
+        }
+      } catch (_) {}
+    }
+  }
 
   late final AnimationController _sheenCtrl;
   late final Animation<double> _sheenAnim;
@@ -140,6 +177,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       end: 2.5,
     ).animate(CurvedAnimation(parent: _sheenCtrl, curve: Curves.easeInOut));
     AppStore.addListener(_onStoreUpdate);
+    _loadUserData();
   }
 
   @override
@@ -157,7 +195,17 @@ class _ProfileScreenState extends State<ProfileScreen>
         builder: (_) => EditPersonalInfoScreen(initialInfo: _personalInfo),
       ),
     );
-    if (result != null) setState(() => _personalInfo = result);
+    if (result != null) {
+      final user = _auth.currentUser;
+      if (user != null) {
+        await _firestore.collection('users').doc(user.uid).update({
+          'name': result.fullName,
+          'phone': result.phone,
+        });
+        await user.updateDisplayName(result.fullName);
+      }
+      _loadUserData(); // refresh
+    }
   }
 
   // ── Sign out ─────────────────────────────────────────────
@@ -166,13 +214,16 @@ class _ProfileScreenState extends State<ProfileScreen>
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _SignOutSheet(
-        onConfirm: () {
-          Navigator.pop(context); // close sheet
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
-            (route) => false,
-          );
+        onConfirm: () async {
+          await FirebaseAuth.instance.signOut();
+          if (mounted) {
+            Navigator.pop(context); // close sheet
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+              (route) => false,
+            );
+          }
         },
         onCancel: () => Navigator.pop(context),
       ),
@@ -197,7 +248,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       body: Column(
         children: [
           _buildProfileHero(),
-          _buildStatsStrip(), // DYNAMIC + TAPPABLE
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.only(bottom: 100),
@@ -286,6 +336,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                   const SizedBox(height: 20),
                   _buildAvatarRow(),
+                  const SizedBox(height: 16),
+                  _buildStatsStripInline(),
                   const SizedBox(height: 20),
                 ],
               ),
@@ -297,7 +349,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           left: 0,
           right: 0,
           child: Container(
-            height: 28,
+            height: 16,
             decoration: BoxDecoration(
               color: AppColors.bg,
               borderRadius: const BorderRadius.only(
@@ -312,15 +364,20 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildAvatarRow() {
+    final user = FirebaseAuth.instance.currentUser;
+    final displayName = _userData?['name'] ?? user?.displayName ?? 'Explorer';
+    final email = user?.email ?? '';
+
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        // Avatar with verified badge
         Stack(
           clipBehavior: Clip.none,
           children: [
             Container(
-              width: 80,
-              height: 80,
+              width: 72,
+              height: 72,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: const LinearGradient(
@@ -337,39 +394,35 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                 ],
               ),
-              child: const Icon(
-                Icons.person_rounded,
-                size: 40,
-                color: Colors.white,
-              ),
+              child: const Icon(Icons.person_rounded, size: 36, color: Colors.white),
             ),
             Positioned(
               bottom: -2,
               right: -2,
               child: Container(
-                width: 24,
-                height: 24,
+                width: 22,
+                height: 22,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: AppColors.gold,
                   border: Border.all(color: const Color(0xFF061018), width: 2),
                 ),
-                child: const Icon(
-                  Icons.verified_rounded,
-                  size: 13,
-                  color: Colors.white,
-                ),
+                child: const Icon(Icons.verified_rounded, size: 12, color: Colors.white),
               ),
             ),
           ],
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 14),
+        // Name, email, badge
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                _personalInfo.fullName,
+                displayName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.playfairDisplay(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
@@ -378,50 +431,50 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               const SizedBox(height: 2),
               Text(
-                '@alex.explores · 🇲🇾 Malaysia',
+                email,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.outfit(
                   fontSize: 12,
                   color: Colors.white.withOpacity(0.50),
                 ),
               ),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.gold.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(AppRadius.full),
-                  border: Border.all(color: AppColors.gold.withOpacity(0.30)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.military_tech_rounded,
-                      size: 13,
-                      color: AppColors.goldLight,
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.gold.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(AppRadius.full),
+                      border: Border.all(color: AppColors.gold.withOpacity(0.30)),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Gold Explorer',
-                      style: GoogleFonts.outfit(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.goldLight,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.military_tech_rounded, size: 13, color: AppColors.goldLight),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Gold Explorer',
+                          style: GoogleFonts.outfit(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.goldLight,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
+        // Edit button
         GestureDetector(
           onTap: _openEditProfile,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.10),
               borderRadius: BorderRadius.circular(AppRadius.full),
@@ -430,8 +483,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.edit_rounded, size: 14, color: Colors.white),
-                const SizedBox(width: 5),
+                const Icon(Icons.edit_rounded, size: 13, color: Colors.white),
+                const SizedBox(width: 4),
                 Text(
                   'Edit',
                   style: GoogleFonts.outfit(
@@ -448,22 +501,17 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ══════════════════════════════════════════════════════════
-  // DYNAMIC STATS STRIP — tappable → screen11
-  // ══════════════════════════════════════════════════════════
-  Widget _buildStatsStrip() {
-    // Dynamic values from AppStore
-    final tripCount = 3 + AppStore.followedTrips.length; // 3 base + followed
+  Widget _buildStatsStripInline() {
+    final tripCount = 3 + AppStore.followedTrips.length;
     final placesCount = AppStore.savedPois.length;
-    // TODO: Google Maps — compute real distance & avg rating
     const covered = '86 km';
-    const avgRating = '4.9 ⭐';
+    const avgRating = '4.9';
 
     final stats = [
-      (tripCount.toString(), 'Trips', null as Color?),
-      (placesCount > 0 ? '$placesCount' : '0', 'Places', null),
-      (covered, 'Covered', null),
-      (avgRating, 'Avg Rating', AppColors.gold as Color?),
+      (tripCount.toString(), 'Trips'),
+      (placesCount.toString(), 'Places'),
+      (covered, 'Covered'),
+      (avgRating, 'Avg Rating'),
     ];
 
     return GestureDetector(
@@ -472,50 +520,48 @@ class _ProfileScreenState extends State<ProfileScreen>
         MaterialPageRoute(builder: (_) => const TripsScreen()),
       ),
       child: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          border: Border(bottom: BorderSide(color: AppColors.borderLight)),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: Colors.white.withOpacity(0.10)),
         ),
         child: IntrinsicHeight(
           child: Row(
             children: [
               for (int i = 0; i < stats.length; i++) ...[
                 Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 14,
-                      horizontal: 8,
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          stats[i].$1,
-                          style: GoogleFonts.playfairDisplay(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: stats[i].$3 ?? AppColors.text1,
-                          ),
-                          textAlign: TextAlign.center,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        stats[i].$1,
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: i == 3 ? AppColors.goldLight : Colors.white,
                         ),
-                        Text(
-                          stats[i].$2.toUpperCase(),
-                          style: GoogleFonts.outfit(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.8,
-                            color: AppColors.text3,
-                          ),
-                          textAlign: TextAlign.center,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        stats[i].$2.toUpperCase(),
+                        style: GoogleFonts.outfit(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                          color: Colors.white.withOpacity(0.45),
                         ),
-                      ],
-                    ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
                 ),
                 if (i < stats.length - 1)
                   Container(
                     width: 1,
-                    margin: const EdgeInsets.symmetric(vertical: 14),
-                    color: AppColors.borderLight,
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    color: Colors.white.withOpacity(0.12),
                   ),
               ],
             ],
@@ -561,6 +607,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           height: 84,
                           child: ListView.builder(
                             scrollDirection: Axis.horizontal,
+                            physics: const BouncingScrollPhysics(),
                             padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
                             itemCount: vlogs.length,
                             itemBuilder: (_, i) => _vlogThumb(vlogs[i]),
@@ -582,6 +629,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           height: 84,
                           child: ListView.builder(
                             scrollDirection: Axis.horizontal,
+                            physics: const BouncingScrollPhysics(),
                             padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
                             itemCount: pois.length,
                             itemBuilder: (_, i) => _poiThumb(pois[i]),
@@ -674,6 +722,9 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _vlogThumb(SavedVlogSummary vlog) {
+    // Map vlog titles to their POI image paths for thumbnails
+    final thumbImage = _vlogThumbnailPath(vlog.title);
+
     return GestureDetector(
       onTap: () => Navigator.push(context, MaterialPageRoute(
           builder: (_) => ExploreScreen(initialPage: vlog.storyIndex))),
@@ -681,12 +732,29 @@ class _ProfileScreenState extends State<ProfileScreen>
         width: 76,
         height: 76,
         margin: const EdgeInsets.only(right: 10),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: LinearGradient(colors: vlog.thumbColors),
-        ),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(14)),
         child: Stack(
+          fit: StackFit.expand,
           children: [
+            // Try real image, fall back to gradient
+            if (thumbImage != null)
+              Image.asset(
+                thumbImage,
+                fit: BoxFit.cover,
+                errorBuilder: (ctx, err, stack) => Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: vlog.thumbColors),
+                  ),
+                ),
+              )
+            else
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: vlog.thumbColors),
+                ),
+              ),
+            // Play button overlay
             Center(
               child: Container(
                 width: 28,
@@ -702,6 +770,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
             ),
+            // Creator avatar
             Positioned(
               bottom: 5,
               left: 5,
@@ -728,6 +797,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
             ),
+            // Duration badge
             Positioned(
               bottom: 5,
               right: 5,
@@ -751,6 +821,17 @@ class _ProfileScreenState extends State<ProfileScreen>
         ),
       ),
     );
+  }
+
+  /// Maps vlog titles to POI image paths for thumbnails
+  String? _vlogThumbnailPath(String vlogTitle) {
+    final lower = vlogTitle.toLowerCase();
+    if (lower.contains('kata')) return 'assets/images/cover_kata.jpg';
+    if (lower.contains('buddha')) return 'assets/images/cover_bigBuddha.jpg';
+    if (lower.contains('jungle') || lower.contains('khao')) return 'assets/images/cover_jungle.jpg';
+    if (lower.contains('promthep') || lower.contains('sunset')) return 'assets/images/cover_promthep.jpg';
+    if (lower.contains('old town') || lower.contains('phuket town')) return 'assets/images/cover_oldTown.jpg';
+    return null;
   }
 
   Widget _poiThumb(SavedPoiSummary poi) {
