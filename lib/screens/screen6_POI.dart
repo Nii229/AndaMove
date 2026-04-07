@@ -17,6 +17,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'screen7_generateItinerary.dart';
 import '../app_store.dart';
 
@@ -87,6 +89,8 @@ class PoiModel {
   final IconData icon;
   final bool isFavourited;
   final List<PoiTag> tags;
+  final double latitude;
+  final double longitude;
 
   const PoiModel({
     required this.name,
@@ -103,6 +107,8 @@ class PoiModel {
     required this.icon,
     this.isFavourited = false,
     this.tags = const [],
+    this.latitude = 0.0,
+    this.longitude = 0.0,
   });
 }
 
@@ -220,6 +226,32 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
       longDescription: poi.longDescription,
     ));
     setState(() => _isFav = AppStore.isPoiSaved(poi.name));
+  }
+
+  Future<void> _navigateToPoi() async {
+    final poi = widget.poi;
+    if (poi.latitude == 0.0 && poi.longitude == 0.0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Location coordinates not available',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+          backgroundColor: _C.coral,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+      return;
+    }
+    final url = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1'
+      '&destination=${poi.latitude},${poi.longitude}'
+      '&destination_place_id='
+      '&travelmode=driving',
+    );
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
   }
 
   void _openAddSheet() {
@@ -364,16 +396,47 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
                   _infoCard(icon: Icons.schedule_rounded, title: 'Estimated Visit', value: poi.estimatedTime),
                   const SizedBox(height: 10),
                   _infoCard(icon: Icons.payments_outlined, title: 'Entry Fee', value: poi.priceRange == 'Free' ? 'Free Entry' : 'Paid · ${poi.priceRange}'),
+                  const SizedBox(height: 22),
+                  _buildMiniMap(),
                   const SizedBox(height: 28),
-                  SizedBox(
-                    width: double.infinity, height: 54,
-                    child: ElevatedButton.icon(
-                      onPressed: _openAddSheet,
-                      icon: const Icon(Icons.add_location_alt_rounded, size: 20),
-                      label: Text('Add to Itinerary', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700)),
-                      style: ElevatedButton.styleFrom(backgroundColor: _C.oceanDeep, foregroundColor: Colors.white, elevation: 0, shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999))),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 1,
+                        child: SizedBox(
+                          height: 54,
+                          child: OutlinedButton.icon(
+                            onPressed: _navigateToPoi,
+                            icon: const Icon(Icons.navigation_rounded, size: 18),
+                            label: Text('Navigate', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700)),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _C.oceanDeep,
+                              side: const BorderSide(color: _C.oceanDeep, width: 1.5),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        flex: 2,
+                        child: SizedBox(
+                          height: 54,
+                          child: ElevatedButton.icon(
+                            onPressed: _openAddSheet,
+                            icon: const Icon(Icons.add_location_alt_rounded, size: 20),
+                            label: Text('Add to Itinerary', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _C.oceanDeep,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -409,6 +472,68 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
           Text(value, style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700, color: _C.text1)),
         ])),
       ]),
+    );
+  }
+
+  Widget _buildMiniMap() {
+    final poi = widget.poi;
+    if (poi.latitude == 0.0 && poi.longitude == 0.0) {
+      return const SizedBox.shrink();
+    }
+
+    final poiLatLng = LatLng(poi.latitude, poi.longitude);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Location',
+            style: GoogleFonts.outfit(
+                fontSize: 16, fontWeight: FontWeight.w700, color: _C.text1)),
+        const SizedBox(height: 10),
+        Container(
+          height: 180,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _C.borderLight),
+            boxShadow: _shadowSm,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: poiLatLng,
+              zoom: 15,
+            ),
+            markers: {
+              Marker(
+                markerId: MarkerId(poi.name),
+                position: poiLatLng,
+                infoWindow: InfoWindow(
+                  title: poi.name,
+                  snippet: poi.location,
+                ),
+              ),
+            },
+            zoomControlsEnabled: false,
+            scrollGesturesEnabled: false,
+            rotateGesturesEnabled: false,
+            tiltGesturesEnabled: false,
+            myLocationButtonEnabled: false,
+            mapToolbarEnabled: false,
+            liteModeEnabled: true,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Icon(Icons.place_rounded, size: 12, color: _C.text3),
+            const SizedBox(width: 4),
+            Text(
+              '${poi.latitude.toStringAsFixed(4)}, ${poi.longitude.toStringAsFixed(4)}',
+              style: GoogleFonts.outfit(fontSize: 11, color: _C.text3),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -8,7 +8,7 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const AndaMoveApp());
+runApp(const AndaMoveApp());
 }
 
 class AndaMoveApp extends StatelessWidget {

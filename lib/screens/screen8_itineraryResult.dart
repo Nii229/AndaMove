@@ -25,8 +25,11 @@
 //         • static final Set<String> inProgressTripIds = {}
 // ============================================================
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'screen7_generateItinerary.dart' show GenerateItineraryScreen, PoiItem;
 import 'screen9_mapView.dart';
 import 'screen10_navigation.dart';
@@ -225,6 +228,196 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
       ),
     );
   }
+
+  void _openRouteMap() async {
+    final pois = widget.selectedPois;
+    final hasCoords = pois.every((p) => p.latitude != 0.0 && p.longitude != 0.0);
+
+    if (!hasCoords) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const MapViewScreen()));
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.xl),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: AppColors.oceanDeep, strokeWidth: 3),
+              const SizedBox(height: 16),
+              Text('Loading route map...', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text1)),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final origin = '${pois.first.latitude},${pois.first.longitude}';
+      final destination = '${pois.last.latitude},${pois.last.longitude}';
+
+      String travelMode;
+      switch (widget.transport.toLowerCase()) {
+        case 'walk': travelMode = 'walking'; break;
+        default: travelMode = 'driving'; break;
+      }
+
+      String waypointsParam = '';
+      if (pois.length > 2) {
+        final waypoints = pois.sublist(1, pois.length - 1)
+            .map((p) => '${p.latitude},${p.longitude}')
+            .join('|');
+        waypointsParam = '&waypoints=$waypoints';
+      }
+
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/directions/json'
+        '?origin=$origin'
+        '&destination=$destination'
+        '$waypointsParam'
+        '&mode=$travelMode'
+        '&key=${_getApiKey()}',
+      );
+
+      final response = await http.get(url);
+      final data = jsonDecode(response.body);
+
+      List<LatLng> routePoints = [];
+      if (data['status'] == 'OK' && data['routes'].isNotEmpty) {
+        final encodedPolyline = data['routes'][0]['overview_polyline']['points'] as String;
+        routePoints = _decodePolyline(encodedPolyline);
+      }
+
+      if (mounted) Navigator.pop(context);
+
+      final markers = <Marker>{};
+      for (int i = 0; i < pois.length; i++) {
+        final poi = pois[i];
+        markers.add(Marker(
+          markerId: MarkerId('stop_$i'),
+          position: LatLng(poi.latitude, poi.longitude),
+          infoWindow: InfoWindow(
+            title: 'Stop ${i + 1}: ${poi.name}',
+            snippet: poi.category,
+          ),
+        ));
+      }
+
+      double minLat = pois.first.latitude, maxLat = pois.first.latitude;
+      double minLng = pois.first.longitude, maxLng = pois.first.longitude;
+      for (final p in pois) {
+        if (p.latitude < minLat) minLat = p.latitude;
+        if (p.latitude > maxLat) maxLat = p.latitude;
+        if (p.longitude < minLng) minLng = p.longitude;
+        if (p.longitude > maxLng) maxLng = p.longitude;
+      }
+      for (final p in routePoints) {
+        if (p.latitude < minLat) minLat = p.latitude;
+        if (p.latitude > maxLat) maxLat = p.latitude;
+        if (p.longitude < minLng) minLng = p.longitude;
+        if (p.longitude > maxLng) maxLng = p.longitude;
+      }
+      final bounds = LatLngBounds(
+        southwest: LatLng(minLat - 0.005, minLng - 0.005),
+        northeast: LatLng(maxLat + 0.005, maxLng + 0.005),
+      );
+
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => Scaffold(
+              appBar: AppBar(
+                backgroundColor: AppColors.surface,
+                elevation: 0,
+                leading: GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: const Icon(Icons.arrow_back_rounded, color: AppColors.text1),
+                ),
+                title: Text('Route Map',
+                  style: GoogleFonts.outfit(
+                    fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text1)),
+                centerTitle: false,
+              ),
+              body: GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2),
+                  zoom: 12,
+                ),
+                markers: markers,
+                polylines: {
+                  if (routePoints.isNotEmpty)
+                    Polyline(
+                      polylineId: const PolylineId('route'),
+                      points: routePoints,
+                      color: AppColors.oceanDeep,
+                      width: 4,
+                    ),
+                },
+                onMapCreated: (controller) {
+                  Future.delayed(const Duration(milliseconds: 300), () {
+                    controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
+                  });
+                },
+                myLocationEnabled: true,
+                myLocationButtonEnabled: true,
+                zoomControlsEnabled: true,
+                mapToolbarEnabled: false,
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const MapViewScreen()));
+      }
+    }
+  }
+
+  List<LatLng> _decodePolyline(String encoded) {
+    final points = <LatLng>[];
+    int index = 0;
+    int lat = 0;
+    int lng = 0;
+
+    while (index < encoded.length) {
+      int shift = 0;
+      int result = 0;
+      int b;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1F) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dlat = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1F) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dlng = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      lng += dlng;
+
+      points.add(LatLng(lat / 1E5, lng / 1E5));
+    }
+    return points;
+  }
+
+  String _getApiKey() => 'AIzaSyB0CTGhgMeEQczyD3N1aM6ynx7hY3HO6kw';
 
   // ── [CHANGED] Edit stops → push new screen7 with POIs pre-checked ──
   void _onEditStops() {
@@ -645,7 +838,10 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
         hasConnector: !isLast,
       ));
 
-      if (!isLast) items.add(_buildConnector(isDone: isDone));
+      if (!isLast) {
+        final travelText = pois[i].distance.isNotEmpty ? pois[i].distance : '~15 min';
+        items.add(_buildConnector(isDone: isDone, travelTime: '${widget.transport} · $travelText'));
+      }
     }
 
     return Padding(
@@ -845,7 +1041,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     );
   }
 
-  Widget _buildConnector({required bool isDone}) {
+  Widget _buildConnector({required bool isDone, String travelTime = '~15 min'}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -881,7 +1077,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
                 Icon(_transportIcon(widget.transport), size: 14,
                     color: isDone ? AppColors.oceanDeep : AppColors.text3),
                 const SizedBox(width: 5),
-                Text('~15 min · 2.4 km',
+                Text(travelTime,
                   style: GoogleFonts.outfit(
                     fontSize: 11, fontWeight: FontWeight.w700,
                     color: isDone ? AppColors.oceanDeep : AppColors.text2,
@@ -988,10 +1184,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
           Expanded(
             flex: 1,
             child: GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const MapViewScreen()),
-              ),
+              onTap: () => _openRouteMap(),
               child: Container(
                 height: 52,
                 decoration: BoxDecoration(

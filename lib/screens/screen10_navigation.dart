@@ -12,6 +12,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'screen11_trips.dart';
 import '../app_store.dart';
 
@@ -362,6 +363,17 @@ class _NavigationScreenState extends State<NavigationScreen>
     _beaconCtrl.dispose();
     _sheenCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _openGoogleMapsNavigation() async {
+    final url = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1'
+      '&destination=7.8804,98.3923'
+      '&travelmode=driving',
+    );
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
   }
 
   // ──────────────────────────────────────────────────────────
@@ -1057,7 +1069,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                         Material(
                           color: Colors.transparent,
                           child: InkWell(
-                            onTap: _onNextStop,
+                            onTap: _openGoogleMapsNavigation,
                             splashColor: Colors.white.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(AppRadius.full),
                             child: Center(

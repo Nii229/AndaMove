@@ -590,7 +590,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               border: Border.all(color: AppColors.borderLight),
               boxShadow: shadowSm,
             ),
-            clipBehavior: Clip.antiAlias,
+            clipBehavior: Clip.none,
             child: Column(
               children: [
                 _savedRow(
@@ -604,13 +604,24 @@ class _ProfileScreenState extends State<ProfileScreen>
                   child: vlogs.isEmpty
                       ? _emptyHint('No saved videos yet')
                       : SizedBox(
-                          height: 84,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            physics: const BouncingScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
-                            itemCount: vlogs.length,
-                            itemBuilder: (_, i) => _vlogThumb(vlogs[i]),
+                          height: 86,
+                          child: ShaderMask(
+                            shaderCallback: (Rect bounds) {
+                              return const LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: [Colors.white, Colors.white, Colors.white, Colors.transparent],
+                                stops: [0.0, 0.7, 0.85, 1.0],
+                              ).createShader(bounds);
+                            },
+                            blendMode: BlendMode.dstIn,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+                              itemCount: vlogs.length,
+                              itemBuilder: (_, i) => _vlogThumb(vlogs[i]),
+                            ),
                           ),
                         ),
                 ),
@@ -626,13 +637,24 @@ class _ProfileScreenState extends State<ProfileScreen>
                   child: pois.isEmpty
                       ? _emptyHint('No saved places yet')
                       : SizedBox(
-                          height: 84,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            physics: const BouncingScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
-                            itemCount: pois.length,
-                            itemBuilder: (_, i) => _poiThumb(pois[i]),
+                          height: 86,
+                          child: ShaderMask(
+                            shaderCallback: (Rect bounds) {
+                              return const LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: [Colors.white, Colors.white, Colors.white, Colors.transparent],
+                                stops: [0.0, 0.7, 0.85, 1.0],
+                              ).createShader(bounds);
+                            },
+                            blendMode: BlendMode.dstIn,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+                              itemCount: pois.length,
+                              itemBuilder: (_, i) => _poiThumb(pois[i]),
+                            ),
                           ),
                         ),
                 ),

@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../admin_theme.dart';
 import '../../app_store.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ── Transport tag model ───────────────────────────────────────
 class _TransportTag {
@@ -90,6 +91,7 @@ class _AdminCreatePoiScreenState
   String _selectedCategory = 'Beach';
   String _selectedPrice    = 'Free';
   String _estimatedTime    = '1 - 2 hours';
+  bool _isPublishing       = false;
 
   final _transportTags = [
     _TransportTag(Icons.electric_scooter_rounded, 'Scooter', selected: true),
@@ -115,7 +117,7 @@ class _AdminCreatePoiScreenState
   }
 
   // ── Publish handler ───────────────────────────────────────
-  void _handlePublish() {
+  Future<void> _handlePublish() async {
     final name = _nameCtrl.text.trim();
     final desc = _descCtrl.text.trim();
 
@@ -129,63 +131,103 @@ class _AdminCreatePoiScreenState
       return;
     }
 
-    // Build opening hours string
-    final hours = 'Mon-Fri ${_weekdayFromCtrl.text}-${_weekdayToCtrl.text}'
-        ' · Sat-Sun ${_weekendFromCtrl.text}-${_weekendToCtrl.text}';
+    setState(() => _isPublishing = true);
 
-    // Get visuals for category
-    final (gradColors, catIcon) = _catVisuals(_selectedCategory);
-    final (tagBg, tagFg) = _catTagColors(_selectedCategory);
+    try {
+      // Build opening hours string
+      final hours = 'Mon-Fri ${_weekdayFromCtrl.text}-${_weekdayToCtrl.text}'
+          ' · Sat-Sun ${_weekendFromCtrl.text}-${_weekendToCtrl.text}';
 
-    // Create and publish
-    final poi = SavedPoiSummary(
-      name: name,
-      location: _addressCtrl.text.trim().isNotEmpty
-          ? _addressCtrl.text.trim()
-          : 'Phuket, Thailand',
-      category: _selectedCategory,
-      rating: 0.0,  // new POI, no ratings yet
-      description: desc,
-      longDescription: _longDescCtrl.text.trim(),
-      openHours: hours,
-      estimatedTime: _estimatedTime,
-      priceRange: _selectedPrice,
-      gradientColors: gradColors,
-      icon: catIcon,
-      tagLabel: _selectedCategory,
-      tagBg: tagBg,
-      tagFg: tagFg,
-      imagePath: '', // no image upload yet — uses gradient fallback
-    );
+      // Create document ID from name (slugified)
+      final docId = name.toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
 
-    AppStore.publishPoi(poi);
+      // Get selected transport tags
+      final transportAccess = _transportTags
+          .where((t) => t.selected)
+          .map((t) => t.label)
+          .toList();
 
-    // Success feedback + go back
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: AC.navy,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_rounded,
-                color: Color(0xFF4ADE80), size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '"$name" published successfully!',
-                style: adminUi(size: 13, color: Colors.white),
-              ),
+      // Write to Firestore
+      await FirebaseFirestore.instance.collection('pois').doc(docId).set({
+        'name': name,
+        'location': _addressCtrl.text.trim().isNotEmpty
+            ? _addressCtrl.text.trim()
+            : 'Phuket, Thailand',
+        'category': _selectedCategory,
+        'rating': 0.0,
+        'description': desc,
+        'longDescription': _longDescCtrl.text.trim(),
+        'openHours': hours,
+        'estimatedTime': _estimatedTime,
+        'priceRange': _selectedPrice,
+        'imagePath': '',
+        'tags': [_selectedCategory],
+        'status': 'active',
+        'createdAt': FieldValue.serverTimestamp(),
+        'createdBy': 'admin',
+        'latitude': double.tryParse(_latCtrl.text.trim()) ?? 0.0,
+        'longitude': double.tryParse(_lngCtrl.text.trim()) ?? 0.0,
+        'transportAccess': transportAccess,
+      });
+
+      // Also publish to AppStore for immediate local visibility
+      final (gradColors, catIcon) = _catVisuals(_selectedCategory);
+      final (tagBg, tagFg) = _catTagColors(_selectedCategory);
+
+      AppStore.publishPoi(SavedPoiSummary(
+        name: name,
+        location: _addressCtrl.text.trim().isNotEmpty
+            ? _addressCtrl.text.trim()
+            : 'Phuket, Thailand',
+        category: _selectedCategory,
+        rating: 0.0,
+        description: desc,
+        longDescription: _longDescCtrl.text.trim(),
+        openHours: hours,
+        estimatedTime: _estimatedTime,
+        priceRange: _selectedPrice,
+        gradientColors: gradColors,
+        icon: catIcon,
+        tagLabel: _selectedCategory,
+        tagBg: tagBg,
+        tagFg: tagFg,
+        imagePath: '',
+      ));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AC.navy,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded,
+                    color: Color(0xFF4ADE80), size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '"$name" published to Firestore!',
+                    style: adminUi(size: 13, color: Colors.white),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        duration: const Duration(seconds: 3),
-      ),
-    );
-
-    Navigator.pop(context);
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError('Failed to publish. Please try again.');
+        setState(() => _isPublishing = false);
+      }
+    }
   }
 
   void _showError(String msg) {
@@ -723,7 +765,7 @@ class _AdminCreatePoiScreenState
           // Publish button
           Expanded(
             child: GestureDetector(
-              onTap: _handlePublish,
+              onTap: _isPublishing ? null : _handlePublish,
               child: Container(
                 height: 46,
                 decoration: BoxDecoration(
@@ -740,10 +782,17 @@ class _AdminCreatePoiScreenState
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.publish_rounded,
-                        size: 18, color: Colors.white),
+                    if (_isPublishing)
+                      const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    else
+                      const Icon(Icons.publish_rounded,
+                          size: 18, color: Colors.white),
                     const SizedBox(width: 6),
-                    Text('Publish POI',
+                    Text(_isPublishing ? 'Publishing…' : 'Publish POI',
                         style: adminUi(
                             size: 14, weight: FontWeight.w700,
                             color: Colors.white)),

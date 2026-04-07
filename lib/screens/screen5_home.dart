@@ -15,6 +15,7 @@ import 'screen12_profile.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../app_store.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ══════════════════════════════════════════════════════════════
 // COLOR TOKENS
@@ -107,6 +108,8 @@ class _PoiCard {
   final List<Color> gradientColors;
   final bool isFavourited;
   final List<_PoiTag> tags;
+  final double latitude;
+  final double longitude;
 
   const _PoiCard({
     required this.name,
@@ -123,6 +126,8 @@ class _PoiCard {
     required this.gradientColors,
     this.isFavourited = false,
     required this.tags,
+    this.latitude = 0.0,
+    this.longitude = 0.0,
   });
 }
 
@@ -150,6 +155,9 @@ class _HomeScreenState extends State<HomeScreen>
   bool _showFavouritesOnly = false;
   String _selectedPrice = 'All';
 
+  List<_PoiCard> _firestorePois = [];
+  bool _poisLoaded = false;
+
   // ADD this method inside _HomeScreenState (e.g. after _searchQuery declarations):
   void _onStoreUpdate() => setState(() {});
 
@@ -173,10 +181,134 @@ class _HomeScreenState extends State<HomeScreen>
     return 'GOOD EVENING';
   }
 
+  Future<void> _loadPoisFromFirestore() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('pois')
+          .where('status', isEqualTo: 'active')
+          .get();
+
+      final pois = snapshot.docs.map((doc) {
+        final d = doc.data();
+        final tags = (d['tags'] as List<dynamic>? ?? []).cast<String>();
+        final category = d['category'] as String? ?? '';
+
+        return _PoiCard(
+          name: d['name'] as String? ?? '',
+          location: d['location'] as String? ?? '',
+          category: category,
+          rating: (d['rating'] as num?)?.toDouble() ?? 0.0,
+          description: d['description'] as String? ?? '',
+          longDescription: d['longDescription'] as String? ?? d['description'] as String? ?? '',
+          openHours: d['openHours'] as String? ?? '',
+          estimatedTime: d['estimatedTime'] as String? ?? '',
+          priceRange: d['priceRange'] as String? ?? 'Free',
+          imagePath: d['imagePath'] as String? ?? '',
+          placeholderIcon: _iconForCategory(category),
+          gradientColors: _colorsForCategory(category),
+          tags: tags.map((t) => _poiTagFromString(t, category)).toList(),
+          latitude: (d['latitude'] as num?)?.toDouble() ?? 0.0,
+          longitude: (d['longitude'] as num?)?.toDouble() ?? 0.0,
+        );
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _firestorePois = pois;
+          _poisLoaded = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _poisLoaded = true);
+    }
+  }
+
+  static IconData _iconForCategory(String category) {
+    switch (category.toLowerCase()) {
+      case 'beach': return Icons.beach_access_rounded;
+      case 'temple': return Icons.temple_buddhist_rounded;
+      case 'nature': return Icons.forest_rounded;
+      case 'culture': return Icons.account_balance_rounded;
+      case 'food': return Icons.restaurant_rounded;
+      case 'adventure': return Icons.surfing_rounded;
+      case 'nightlife': return Icons.nightlife_rounded;
+      case 'heritage': return Icons.location_city_rounded;
+      case 'viewpoint': return Icons.landscape_rounded;
+      case 'attraction': return Icons.attractions_rounded;
+      case 'shopping': return Icons.shopping_bag_rounded;
+      default: return Icons.place_rounded;
+    }
+  }
+
+  static List<Color> _colorsForCategory(String category) {
+    switch (category.toLowerCase()) {
+      case 'beach': return const [Color(0xFF0A7FAB), Color(0xFF38BDF8), Color(0xFF93C5FD)];
+      case 'temple': return const [Color(0xFFFBBF24), Color(0xFFF59E0B), Color(0xFFFDE68A)];
+      case 'nature': return const [Color(0xFF16A34A), Color(0xFF22C55E), Color(0xFF86EFAC)];
+      case 'culture': return const [Color(0xFF8B4513), Color(0xFFC8912E), Color(0xFFF0C060)];
+      case 'food': return const [Color(0xFFE8634C), Color(0xFFF97316), Color(0xFFFED7AA)];
+      case 'adventure': return const [Color(0xFF0369A1), Color(0xFF0EA5E9), Color(0xFF7DD3FC)];
+      case 'nightlife': return const [Color(0xFF7C3AED), Color(0xFFDB2777), Color(0xFFF472B6)];
+      case 'heritage': return const [Color(0xFF92400E), Color(0xFFB45309), Color(0xFFFDE68A)];
+      case 'viewpoint': return const [Color(0xFFF59E0B), Color(0xFFF97316), Color(0xFFFB7185)];
+      case 'attraction': return const [Color(0xFF06B6D4), Color(0xFF0891B2), Color(0xFF67E8F9)];
+      case 'shopping': return const [Color(0xFF475569), Color(0xFF64748B), Color(0xFFCBD5E1)];
+      default: return const [Color(0xFF0A7FAB), Color(0xFF1AAECF), Color(0xFF7DD8EF)];
+    }
+  }
+
+  static _PoiTag _poiTagFromString(String tag, String category) {
+    const colors = <String, (Color, Color)>{
+      'beach': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
+      'nature': (Color(0xFFEEF5EE), Color(0xFF16A34A)),
+      'culture': (Color(0xFFFDF5E7), Color(0xFFC8912E)),
+      'temple': (Color(0xFFFDF5E7), Color(0xFFC8912E)),
+      'food': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'seafood': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'nightlife': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'popular': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
+      'must see': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
+      'must do': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
+      'hidden gem': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
+      'peaceful': (Color(0xFFEEF5EE), Color(0xFF16A34A)),
+      'scenic': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
+      'ethical': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
+      'upscale': (Color(0xFFFDF5E7), Color(0xFFC8912E)),
+      'heritage': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'history': (Color(0xFFFDF5E7), Color(0xFFC8912E)),
+      'show': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'local': (Color(0xFFFDF5E7), Color(0xFFC8912E)),
+      'street food': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'market': (Color(0xFFFDF5E7), Color(0xFFC8912E)),
+      'fine dining': (Color(0xFFFDF5E7), Color(0xFFC8912E)),
+      'thai': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'adventure': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'wildlife': (Color(0xFFEEF5EE), Color(0xFF16A34A)),
+      'thrill': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'outdoor': (Color(0xFFEEF5EE), Color(0xFF16A34A)),
+      'snorkel': (Color(0xFFEEF5EE), Color(0xFF16A34A)),
+      'club': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'music': (Color(0xFFEDE9FE), Color(0xFF7C3AED)),
+      'museum': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'sunset': (Color(0xFFFDF5E7), Color(0xFFC8912E)),
+      'viewpoint': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
+      'family': (Color(0xFFEEF5EE), Color(0xFF16A34A)),
+      'indoor': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
+      'shopping': (Color(0xFFFDF0EE), Color(0xFFE8634C)),
+      'luxury': (Color(0xFFFDF5E7), Color(0xFFC8912E)),
+      'relax': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
+      'mangrove': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
+    };
+    final lower = tag.toLowerCase();
+    final c = colors[lower] ?? (const Color(0xFFEAF8FD), const Color(0xFF0A7FAB));
+    return _PoiTag(tag, c.$1, c.$2);
+  }
+
   @override
   void initState() {
     super.initState();
     _weatherFuture = _WeatherStat.fetch();
+    _loadPoisFromFirestore();
     AppStore.addListener(_onStoreUpdate);
   }
 
@@ -889,13 +1021,16 @@ class _HomeScreenState extends State<HomeScreen>
   ];
 
   // ── TRENDING ─────────────────────────────────────────────
-  List<_PoiCard> get _trendingCards =>
-      _poiCards.where((c) => c.rating >= 4.7).take(5).toList();
+  List<_PoiCard> get _trendingCards {
+    final sourcePois = _firestorePois.isNotEmpty ? _firestorePois : _poiCards;
+    return sourcePois.where((c) => c.rating >= 4.7).take(5).toList();
+  }
 
   // ── FILTERED POI ─────────────────────────────────────────
   List<_PoiCard> get _filteredPoiCards {
+    final sourcePois = _firestorePois.isNotEmpty ? _firestorePois : _poiCards;
     final selectedCatLabel = _categories[_selectedCat].label.toLowerCase();
-    return _poiCards.where((card) {
+    return sourcePois.where((card) {
       final q = _searchQuery.trim().toLowerCase();
       final matchesSearch =
           q.isEmpty ||
@@ -2320,6 +2455,8 @@ class _HomeScreenState extends State<HomeScreen>
             priceRange: card.priceRange,
             isFavourited: card.isFavourited,
             tags: card.tags.map((t) => PoiTag(t.label, t.bg, t.fg)).toList(),
+            latitude: card.latitude,
+            longitude: card.longitude,
           ),
         ),
       ),

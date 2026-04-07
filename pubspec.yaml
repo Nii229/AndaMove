@@ -19,6 +19,9 @@ dependencies:
   http: ^1.2.1
   video_player: ^2.11.1
   google_sign_in: ^7.2.0
+  google_maps_flutter: ^2.10.0
+  geolocator: ^13.0.2
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

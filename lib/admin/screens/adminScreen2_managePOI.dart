@@ -18,6 +18,7 @@ import '../admin_theme.dart';
 import 'adminScreen3_createPOI.dart';
 import '../../screens/screen6_POI.dart';
 import '../../app_store.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ── Status enum ───────────────────────────────────────────────
 enum PoiStatus { active, hidden, review }
@@ -26,9 +27,12 @@ enum PoiStatus { active, hidden, review }
 class _AdminPoi {
   final PoiModel poi;
   final String? viewsText;
-  const _AdminPoi({required this.poi, this.viewsText});
+  final String? firestoreDocId;
+  final PoiStatus? firestoreStatus;
+  const _AdminPoi({required this.poi, this.viewsText, this.firestoreDocId, this.firestoreStatus});
 
   PoiStatus get status {
+    if (firestoreStatus != null) return firestoreStatus!;
     if (AppStore.hiddenPois.contains(poi.name)) return PoiStatus.hidden;
     if (AppStore.reviewPois.contains(poi.name)) return PoiStatus.review;
     return PoiStatus.active;
@@ -639,18 +643,6 @@ List<_AdminPoi> _buildAllPois() {
   ].where((ap) => !AppStore.deletedPois.contains(ap.poi.name)).toList();
 }
 
-// ── Seed demo statuses (called once) ──────────────────────────
-bool _seeded = false;
-void _seedOnce() {
-  if (_seeded) return;
-  _seeded = true;
-  if (!AppStore.deletedPois.contains('Phuket Aquarium')) {
-    AppStore.reviewPois.add('Phuket Aquarium');
-  }
-  if (!AppStore.deletedPois.contains('Illuzion Club')) {
-    AppStore.hiddenPois.add('Illuzion Club');
-  }
-}
 
 // ══════════════════════════════════════════════════════════════
 // MAIN SCREEN
@@ -664,11 +656,127 @@ class AdminPoiScreen extends StatefulWidget {
 class _AdminPoiScreenState extends State<AdminPoiScreen> {
   int _selectedCat = 0;
   String _searchQuery = '';
+  List<_AdminPoi> _firestorePois = [];
+  bool _loaded = false;
+
+  Future<void> _loadPois() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('pois')
+          .get();
+
+      final pois = snapshot.docs.map((doc) {
+        final d = doc.data();
+        final category = d['category'] as String? ?? '';
+        final tags = (d['tags'] as List<dynamic>? ?? []).cast<String>();
+        final status = d['status'] as String? ?? 'active';
+        final rating = (d['rating'] as num?)?.toDouble() ?? 0.0;
+
+        PoiStatus poiStatus;
+        switch (status) {
+          case 'hidden': poiStatus = PoiStatus.hidden; break;
+          case 'review': poiStatus = PoiStatus.review; break;
+          default: poiStatus = PoiStatus.active;
+        }
+
+        return _AdminPoi(
+          poi: PoiModel(
+            name: d['name'] as String? ?? '',
+            location: d['location'] as String? ?? '',
+            category: category,
+            rating: rating,
+            description: d['description'] as String? ?? '',
+            longDescription: d['longDescription'] as String? ?? '',
+            openHours: d['openHours'] as String? ?? '',
+            estimatedTime: d['estimatedTime'] as String? ?? '',
+            priceRange: d['priceRange'] as String? ?? 'Free',
+            imagePath: d['imagePath'] as String? ?? '',
+            gradientColors: _colorsForCategory(category),
+            icon: _iconForCategory(category),
+            tags: tags.map((t) {
+              final c = _tagColors(t);
+              return PoiTag(t, c.$1, c.$2);
+            }).toList(),
+          ),
+          viewsText: '${rating.toStringAsFixed(1)} · ${d['createdBy'] == 'admin' ? 'Admin' : 'Seed'}',
+          firestoreDocId: doc.id,
+          firestoreStatus: poiStatus,
+        );
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _firestorePois = pois;
+          _loaded = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loaded = true);
+    }
+  }
+
+  static IconData _iconForCategory(String category) {
+    switch (category.toLowerCase()) {
+      case 'beach': return Icons.beach_access_rounded;
+      case 'temple': return Icons.temple_buddhist_rounded;
+      case 'nature': return Icons.forest_rounded;
+      case 'culture': return Icons.account_balance_rounded;
+      case 'food': return Icons.restaurant_rounded;
+      case 'adventure': return Icons.surfing_rounded;
+      case 'nightlife': return Icons.nightlife_rounded;
+      case 'heritage': return Icons.location_city_rounded;
+      case 'viewpoint': return Icons.landscape_rounded;
+      case 'attraction': return Icons.attractions_rounded;
+      case 'shopping': return Icons.shopping_bag_rounded;
+      default: return Icons.place_rounded;
+    }
+  }
+
+  static List<Color> _colorsForCategory(String category) {
+    switch (category.toLowerCase()) {
+      case 'beach': return const [Color(0xFF0A7FAB), Color(0xFF38BDF8), Color(0xFF93C5FD)];
+      case 'temple': return const [Color(0xFFFBBF24), Color(0xFFF59E0B), Color(0xFFFDE68A)];
+      case 'nature': return const [Color(0xFF16A34A), Color(0xFF22C55E), Color(0xFF86EFAC)];
+      case 'culture': return const [Color(0xFF7C3AED), Color(0xFFA855F7), Color(0xFFE9D5FF)];
+      case 'food': return const [Color(0xFFE8634C), Color(0xFFF97316), Color(0xFFFED7AA)];
+      case 'adventure': return const [Color(0xFF166534), Color(0xFF16A34A), Color(0xFF86EFAC)];
+      case 'nightlife': return const [Color(0xFF7C3AED), Color(0xFFDB2777), Color(0xFFF472B6)];
+      case 'heritage': return const [Color(0xFF92400E), Color(0xFFB45309), Color(0xFFFDE68A)];
+      case 'viewpoint': return const [Color(0xFFF59E0B), Color(0xFFF97316), Color(0xFFFB7185)];
+      case 'attraction': return const [Color(0xFF06B6D4), Color(0xFF0891B2), Color(0xFF67E8F9)];
+      case 'shopping': return const [Color(0xFF475569), Color(0xFF64748B), Color(0xFFCBD5E1)];
+      default: return const [Color(0xFF0A7FAB), Color(0xFF1AAECF), Color(0xFF7DD8EF)];
+    }
+  }
+
+  static (Color, Color) _tagColors(String tag) {
+    switch (tag.toLowerCase()) {
+      case 'beach': case 'popular': case 'must see': case 'must do':
+      case 'hidden gem': case 'scenic': case 'ethical': case 'viewpoint':
+      case 'indoor': case 'relax': case 'mangrove':
+        return (const Color(0xFFEAF8FD), const Color(0xFF0A7FAB));
+      case 'nature': case 'peaceful': case 'wildlife': case 'outdoor':
+      case 'snorkel': case 'family':
+        return (const Color(0xFFEEF5EE), const Color(0xFF16A34A));
+      case 'culture': case 'temple': case 'upscale': case 'heritage':
+      case 'history': case 'fine dining': case 'luxury': case 'sunset':
+      case 'local': case 'market':
+        return (const Color(0xFFFDF5E7), const Color(0xFFC8912E));
+      case 'food': case 'seafood': case 'nightlife': case 'adventure':
+      case 'thrill': case 'show': case 'street food': case 'thai':
+      case 'club': case 'museum': case 'shopping':
+        return (const Color(0xFFFDF0EE), const Color(0xFFE8634C));
+      case 'music':
+        return (const Color(0xFFEDE9FE), const Color(0xFF7C3AED));
+      default:
+        return (const Color(0xFFEAF8FD), const Color(0xFF0A7FAB));
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _seedOnce();
+    _loadPois();
     AppStore.addListener(_rebuild);
   }
 
@@ -680,7 +788,7 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
 
   void _rebuild() => setState(() {});
 
-  List<_AdminPoi> get _allPois => _buildAllPois();
+  List<_AdminPoi> get _allPois => _firestorePois.isNotEmpty ? _firestorePois : _buildAllPois();
 
   List<String> get _cats {
     final pois = _allPois;
@@ -1160,12 +1268,16 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
             Icons.visibility_off_rounded,
             'Hide',
             AC.amber,
-            () {
+            () async {
+              if (ap.firestoreDocId != null) {
+                await FirebaseFirestore.instance.collection('pois').doc(ap.firestoreDocId).update({'status': 'hidden'});
+              }
               AppStore.hidePoi(n);
+              _loadPois();
               _snack('"$n" hidden from tourists');
             },
           ),
-          (Icons.delete_rounded, 'Delete', AC.coral, () => _confirmDelete(n)),
+          (Icons.delete_rounded, 'Delete', AC.coral, () => _confirmDelete(ap)),
         ];
       case PoiStatus.hidden:
         acts = [
@@ -1179,12 +1291,16 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
             Icons.visibility_rounded,
             'Show',
             AC.green,
-            () {
+            () async {
+              if (ap.firestoreDocId != null) {
+                await FirebaseFirestore.instance.collection('pois').doc(ap.firestoreDocId).update({'status': 'active'});
+              }
               AppStore.showPoi(n);
+              _loadPois();
               _snack('"$n" is now visible');
             },
           ),
-          (Icons.delete_rounded, 'Delete', AC.coral, () => _confirmDelete(n)),
+          (Icons.delete_rounded, 'Delete', AC.coral, () => _confirmDelete(ap)),
         ];
       case PoiStatus.review:
         acts = [
@@ -1192,8 +1308,12 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
             Icons.check_circle_rounded,
             'Approve',
             AC.green,
-            () {
+            () async {
+              if (ap.firestoreDocId != null) {
+                await FirebaseFirestore.instance.collection('pois').doc(ap.firestoreDocId).update({'status': 'active'});
+              }
               AppStore.approvePoi(n);
+              _loadPois();
               _snack('"$n" approved!');
             },
           ),
@@ -1207,7 +1327,7 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
             Icons.close_rounded,
             'Reject',
             AC.coral,
-            () => _confirmDelete(n, reject: true),
+            () => _confirmDelete(ap, reject: true),
           ),
         ];
     }
@@ -1250,7 +1370,8 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
     );
   }
 
-  void _confirmDelete(String name, {bool reject = false}) {
+  void _confirmDelete(_AdminPoi ap, {bool reject = false}) {
+    final name = ap.poi.name;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1322,11 +1443,13 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: GestureDetector(
-                    onTap: () {
+                    onTap: () async {
                       Navigator.pop(ctx);
-                      reject
-                          ? AppStore.rejectPoi(name)
-                          : AppStore.deletePoi(name);
+                      if (ap.firestoreDocId != null) {
+                        await FirebaseFirestore.instance.collection('pois').doc(ap.firestoreDocId).delete();
+                      }
+                      reject ? AppStore.rejectPoi(name) : AppStore.deletePoi(name);
+                      _loadPois();
                       _snack('"$name" ${reject ? "rejected" : "deleted"}');
                     },
                     child: Container(

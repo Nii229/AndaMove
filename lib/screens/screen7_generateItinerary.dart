@@ -8,8 +8,11 @@
 //             Continue Editing, and Edit Stops flows from screen8/screen11.
 // ============================================================
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../app_store.dart';
 import 'screen8_itineraryResult.dart';
 
@@ -79,12 +82,14 @@ class PoiItem {
   final String name;
   final String category;
   final double rating;
-  final String distance;
+  String distance;
   final IconData thumbIcon;
   final List<Color> thumbGradient;
   final String imagePath;
-  final bool isSavedPoi;
+  bool isSavedPoi;
   bool checked;
+  final double latitude;
+  final double longitude;
 
   PoiItem({
     required this.name,
@@ -96,6 +101,8 @@ class PoiItem {
     required this.imagePath,
     this.isSavedPoi = false,
     this.checked = false,
+    this.latitude = 0.0,
+    this.longitude = 0.0,
   });
 }
 
@@ -389,7 +396,10 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
     ),
   ];
 
-  late final List<PoiItem> _allPois;
+  late List<PoiItem> _allPois;
+  bool _loadingPois = true;
+
+  static const _mapsApiKey = 'AIzaSyB0CTGhgMeEQczyD3N1aM6ynx7hY3HO6kw';
 
   @override
   void initState() {
@@ -435,6 +445,9 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
     }
     // ─────────────────────────────────────────────────────────
 
+    _loadingPois = false; // static data is ready as fallback
+    _loadPoisFromFirestore();
+
     _sheenCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
@@ -449,6 +462,94 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
   void dispose() {
     _sheenCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPoisFromFirestore() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('pois')
+          .where('status', isEqualTo: 'active')
+          .get();
+
+      final firestorePois = snapshot.docs.map((doc) {
+        final d = doc.data();
+        final category = d['category'] as String? ?? '';
+        final name = d['name'] as String? ?? '';
+        final imagePath = d['imagePath'] as String? ?? '';
+
+        IconData icon;
+        switch (category.toLowerCase()) {
+          case 'beach': icon = Icons.beach_access_rounded; break;
+          case 'temple': icon = Icons.temple_buddhist_rounded; break;
+          case 'nature': icon = Icons.forest_rounded; break;
+          case 'culture': icon = Icons.account_balance_rounded; break;
+          case 'food': icon = Icons.restaurant_rounded; break;
+          case 'adventure': icon = Icons.surfing_rounded; break;
+          case 'nightlife': icon = Icons.nightlife_rounded; break;
+          case 'heritage': icon = Icons.location_city_rounded; break;
+          case 'viewpoint': icon = Icons.landscape_rounded; break;
+          case 'attraction': icon = Icons.attractions_rounded; break;
+          case 'shopping': icon = Icons.shopping_bag_rounded; break;
+          default: icon = Icons.place_rounded;
+        }
+
+        List<Color> gradient;
+        switch (category.toLowerCase()) {
+          case 'beach': gradient = [Color(0xFF0A7FAB), Color(0xFF38BDF8)]; break;
+          case 'temple': gradient = [Color(0xFFFBBF24), Color(0xFFF59E0B)]; break;
+          case 'nature': gradient = [Color(0xFF16A34A), Color(0xFF22C55E)]; break;
+          case 'culture': gradient = [Color(0xFF7C3AED), Color(0xFFA855F7)]; break;
+          case 'food': gradient = [Color(0xFFE8634C), Color(0xFFF97316)]; break;
+          case 'adventure': gradient = [Color(0xFF166534), Color(0xFF16A34A)]; break;
+          case 'nightlife': gradient = [Color(0xFF7C3AED), Color(0xFFDB2777)]; break;
+          case 'heritage': gradient = [Color(0xFF92400E), Color(0xFFB45309)]; break;
+          case 'viewpoint': gradient = [Color(0xFFF59E0B), Color(0xFFF97316)]; break;
+          case 'attraction': gradient = [Color(0xFF06B6D4), Color(0xFF0891B2)]; break;
+          case 'shopping': gradient = [Color(0xFF475569), Color(0xFF64748B)]; break;
+          default: gradient = [Color(0xFF0A7FAB), Color(0xFF1AAECF)];
+        }
+
+        return PoiItem(
+          name: name,
+          category: category,
+          rating: (d['rating'] as num?)?.toDouble() ?? 0.0,
+          distance: '',
+          thumbIcon: icon,
+          thumbGradient: gradient,
+          imagePath: imagePath,
+          latitude: (d['latitude'] as num?)?.toDouble() ?? 0.0,
+          longitude: (d['longitude'] as num?)?.toDouble() ?? 0.0,
+        );
+      }).toList();
+
+      if (firestorePois.isNotEmpty && mounted) {
+        final savedNames = AppStore.savedPois.map((p) => p.name).toSet();
+        for (final poi in firestorePois) {
+          if (savedNames.contains(poi.name)) {
+            poi.isSavedPoi = true;
+          }
+        }
+
+        if (widget.preSelectedPoiNames != null) {
+          final nameSet = widget.preSelectedPoiNames!.toSet();
+          for (final poi in firestorePois) {
+            if (nameSet.contains(poi.name)) {
+              poi.checked = true;
+            }
+          }
+        }
+
+        setState(() {
+          _allPois.clear();
+          _allPois.addAll(firestorePois);
+          _loadingPois = false;
+        });
+      } else {
+        if (mounted) setState(() => _loadingPois = false);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadingPois = false);
+    }
   }
 
   List<PoiItem> get _checkedPois => _allPois.where((p) => p.checked).toList();
@@ -481,37 +582,171 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
     ),
   );
 
-  void _onGenerate() {
+  Future<void> _onGenerate() async {
     final checked = _checkedPois;
     if (checked.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Please select at least one place.',
-            style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
-          ),
+          content: Text('Please select at least one place.',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
           backgroundColor: AppColors.coral,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ),
       );
       return;
     }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ItineraryResultScreen(
-          transport: _transports[_selectedTransport].label,
-          categories: _selectedCats.map((i) => _categories[i].label).toList(),
-          selectedPois: checked,
-          date: _selectedDate,
-          time: _selectedTime,
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.xl),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: AppColors.oceanDeep, strokeWidth: 3),
+              const SizedBox(height: 16),
+              Text('Optimizing your route...', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text1)),
+              const SizedBox(height: 4),
+              Text('Calculating travel times', style: GoogleFonts.outfit(fontSize: 12, color: AppColors.text2)),
+            ],
+          ),
         ),
       ),
     );
+
+    try {
+      final transportLabel = _transports[_selectedTransport].label;
+      String travelMode;
+      switch (transportLabel.toLowerCase()) {
+        case 'walk': travelMode = 'walking'; break;
+        case 'scooter': case 'tuk-tuk': case 'car': default: travelMode = 'driving'; break;
+      }
+
+      final hasCoords = checked.every((p) => p.latitude != 0.0 && p.longitude != 0.0);
+
+      if (hasCoords && checked.length > 1) {
+        final locations = checked.map((p) => '${p.latitude},${p.longitude}').join('|');
+        final url = Uri.parse(
+          'https://maps.googleapis.com/maps/api/distancematrix/json'
+          '?origins=$locations'
+          '&destinations=$locations'
+          '&mode=$travelMode'
+          '&key=$_mapsApiKey',
+        );
+
+        final response = await http.get(url);
+        final data = jsonDecode(response.body);
+
+        if (data['status'] == 'OK') {
+          final n = checked.length;
+          final rows = data['rows'] as List;
+          final visited = <int>{};
+          final order = <int>[0];
+          visited.add(0);
+
+          while (order.length < n) {
+            final current = order.last;
+            final elements = rows[current]['elements'] as List;
+            int bestNext = -1;
+            int bestDuration = 999999;
+
+            for (int j = 0; j < n; j++) {
+              if (visited.contains(j)) continue;
+              final el = elements[j];
+              if (el['status'] == 'OK') {
+                final dur = el['duration']['value'] as int;
+                if (dur < bestDuration) {
+                  bestDuration = dur;
+                  bestNext = j;
+                }
+              }
+            }
+
+            if (bestNext == -1) {
+              for (int j = 0; j < n; j++) {
+                if (!visited.contains(j)) {
+                  order.add(j);
+                  visited.add(j);
+                }
+              }
+            } else {
+              order.add(bestNext);
+              visited.add(bestNext);
+            }
+          }
+
+          final optimized = order.map((i) => checked[i]).toList();
+
+          for (int i = 0; i < optimized.length - 1; i++) {
+            final fromIdx = order[i];
+            final toIdx = order[i + 1];
+            final el = rows[fromIdx]['elements'][toIdx];
+            if (el['status'] == 'OK') {
+              optimized[i].distance = el['duration']['text'] as String;
+            }
+          }
+          optimized.last.distance = 'Last stop';
+
+          if (mounted) Navigator.pop(context);
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ItineraryResultScreen(
+                  transport: transportLabel,
+                  categories: _selectedCats.map((i) => _categories[i].label).toList(),
+                  selectedPois: optimized,
+                  date: _selectedDate,
+                  time: _selectedTime,
+                ),
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      // Fallback: no coords or API failed
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ItineraryResultScreen(
+              transport: transportLabel,
+              categories: _selectedCats.map((i) => _categories[i].label).toList(),
+              selectedPois: checked,
+              date: _selectedDate,
+              time: _selectedTime,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ItineraryResultScreen(
+              transport: _transports[_selectedTransport].label,
+              categories: _selectedCats.map((i) => _categories[i].label).toList(),
+              selectedPois: checked,
+              date: _selectedDate,
+              time: _selectedTime,
+            ),
+          ),
+        );
+      }
+    }
   }
 
   // ══════════════════════════════════════════════════════════
