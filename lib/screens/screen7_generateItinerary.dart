@@ -11,6 +11,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../app_store.dart';
@@ -90,6 +91,7 @@ class PoiItem {
   bool checked;
   final double latitude;
   final double longitude;
+  int stayMinutes;
 
   PoiItem({
     required this.name,
@@ -103,6 +105,7 @@ class PoiItem {
     this.checked = false,
     this.latitude = 0.0,
     this.longitude = 0.0,
+    this.stayMinutes = 60,
   });
 }
 
@@ -127,7 +130,7 @@ class GenerateItineraryScreen extends StatefulWidget {
 class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
     with SingleTickerProviderStateMixin {
   int _selectedTransport = 0;
-  late final Set<int> _selectedCats;
+  String _poiSearchQuery = '';
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = const TimeOfDay(hour: 9, minute: 0);
 
@@ -399,15 +402,16 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
   late List<PoiItem> _allPois;
   bool _loadingPois = true;
 
+  double? _userLat;
+  double? _userLng;
+  bool _locationLoading = true;
+  String _locationStatus = 'Getting your location...';
+
   static const _mapsApiKey = 'AIzaSyB0CTGhgMeEQczyD3N1aM6ynx7hY3HO6kw';
 
   @override
   void initState() {
     super.initState();
-    _selectedCats = Set.from(
-      List.generate(_categories.length, (i) => i),
-    );
-
     final savedNames = AppStore.savedPois.map((p) => p.name).toSet();
 
     final savedItems = AppStore.savedPois
@@ -447,6 +451,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
 
     _loadingPois = false; // static data is ready as fallback
     _loadPoisFromFirestore();
+    _getUserLocation();
 
     _sheenCtrl = AnimationController(
       vsync: this,
@@ -552,6 +557,66 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
     }
   }
 
+  Future<void> _getUserLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) setState(() {
+            _locationLoading = false;
+            _locationStatus = 'Location denied — using Phuket center';
+            _userLat = 7.8804;
+            _userLng = 98.3923;
+          });
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) setState(() {
+          _locationLoading = false;
+          _locationStatus = 'Location disabled — using Phuket center';
+          _userLat = 7.8804;
+          _userLng = 98.3923;
+        });
+        return;
+      }
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      if (mounted) setState(() {
+        _userLat = position.latitude;
+        _userLng = position.longitude;
+        _locationLoading = false;
+        _locationStatus = 'Location found';
+      });
+    } catch (e) {
+      if (mounted) setState(() {
+        _locationLoading = false;
+        _locationStatus = 'Location unavailable — using Phuket center';
+        _userLat = 7.8804;
+        _userLng = 98.3923;
+      });
+    }
+  }
+
+  static int _suggestedStayMinutes(String category) {
+    switch (category.toLowerCase()) {
+      case 'beach': return 120;       // 2 hours
+      case 'temple': return 60;       // 1 hour
+      case 'nature': return 90;       // 1.5 hours
+      case 'culture': return 90;      // 1.5 hours
+      case 'food': return 60;         // 1 hour
+      case 'adventure': return 120;   // 2 hours
+      case 'nightlife': return 120;   // 2 hours
+      case 'heritage': return 60;     // 1 hour
+      case 'viewpoint': return 45;    // 45 mins
+      case 'attraction': return 90;   // 1.5 hours
+      case 'shopping': return 120;    // 2 hours
+      default: return 60;
+    }
+  }
+
   List<PoiItem> get _checkedPois => _allPois.where((p) => p.checked).toList();
 
   bool get _hasSavedPois => _allPois.any((p) => p.isSavedPoi);
@@ -633,11 +698,14 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       final hasCoords = checked.every((p) => p.latitude != 0.0 && p.longitude != 0.0);
 
       if (hasCoords && checked.length > 1) {
-        final locations = checked.map((p) => '${p.latitude},${p.longitude}').join('|');
+        final userLoc = '${_userLat ?? 7.8804},${_userLng ?? 98.3923}';
+        final poiLocs = checked.map((p) => '${p.latitude},${p.longitude}').toList();
+        final allLocations = [userLoc, ...poiLocs].join('|');
+
         final url = Uri.parse(
           'https://maps.googleapis.com/maps/api/distancematrix/json'
-          '?origins=$locations'
-          '&destinations=$locations'
+          '?origins=$allLocations'
+          '&destinations=$allLocations'
           '&mode=$travelMode'
           '&key=$_mapsApiKey',
         );
@@ -646,19 +714,18 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
         final data = jsonDecode(response.body);
 
         if (data['status'] == 'OK') {
-          final n = checked.length;
+          final totalPoints = checked.length + 1; // +1 for user location
           final rows = data['rows'] as List;
-          final visited = <int>{};
-          final order = <int>[0];
-          visited.add(0);
+          final visited = <int>{0}; // Start from user location (index 0)
+          final order = <int>[]; // Only POI indices (1-based)
+          int current = 0;
 
-          while (order.length < n) {
-            final current = order.last;
+          while (order.length < checked.length) {
             final elements = rows[current]['elements'] as List;
             int bestNext = -1;
             int bestDuration = 999999;
 
-            for (int j = 0; j < n; j++) {
+            for (int j = 1; j < totalPoints; j++) {
               if (visited.contains(j)) continue;
               final el = elements[j];
               if (el['status'] == 'OK') {
@@ -671,29 +738,36 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
             }
 
             if (bestNext == -1) {
-              for (int j = 0; j < n; j++) {
+              for (int j = 1; j < totalPoints; j++) {
                 if (!visited.contains(j)) {
-                  order.add(j);
+                  order.add(j - 1);
                   visited.add(j);
                 }
               }
             } else {
-              order.add(bestNext);
+              order.add(bestNext - 1); // Convert back to checked[] index
               visited.add(bestNext);
+              current = bestNext;
             }
           }
 
           final optimized = order.map((i) => checked[i]).toList();
 
-          for (int i = 0; i < optimized.length - 1; i++) {
-            final fromIdx = order[i];
-            final toIdx = order[i + 1];
+          // First stop: travel time from user location
+          final firstEl = rows[0]['elements'][order.first + 1];
+          if (firstEl['status'] == 'OK') {
+            optimized.first.distance = firstEl['duration']['text'] as String;
+          }
+          // Subsequent stops
+          for (int i = 1; i < optimized.length; i++) {
+            final fromIdx = order[i - 1] + 1;
+            final toIdx = order[i] + 1;
             final el = rows[fromIdx]['elements'][toIdx];
             if (el['status'] == 'OK') {
               optimized[i].distance = el['duration']['text'] as String;
             }
           }
-          optimized.last.distance = 'Last stop';
+          optimized.last.distance = optimized.last.distance.isEmpty ? 'Last stop' : optimized.last.distance;
 
           if (mounted) Navigator.pop(context);
           if (mounted) {
@@ -702,7 +776,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
               MaterialPageRoute(
                 builder: (_) => ItineraryResultScreen(
                   transport: transportLabel,
-                  categories: _selectedCats.map((i) => _categories[i].label).toList(),
+                  categories: [],
                   selectedPois: optimized,
                   date: _selectedDate,
                   time: _selectedTime,
@@ -722,7 +796,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
           MaterialPageRoute(
             builder: (_) => ItineraryResultScreen(
               transport: transportLabel,
-              categories: _selectedCats.map((i) => _categories[i].label).toList(),
+              categories: [],
               selectedPois: checked,
               date: _selectedDate,
               time: _selectedTime,
@@ -738,7 +812,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
           MaterialPageRoute(
             builder: (_) => ItineraryResultScreen(
               transport: _transports[_selectedTransport].label,
-              categories: _selectedCats.map((i) => _categories[i].label).toList(),
+              categories: [],
               selectedPois: checked,
               date: _selectedDate,
               time: _selectedTime,
@@ -760,6 +834,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       body: Column(
         children: [
           _buildHeader(),
+          _buildLocationBanner(),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.only(bottom: 16),
@@ -775,20 +850,12 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
                   _divider(),
                   _buildSection(
                     number: '2',
-                    color: AppColors.gold,
-                    title: 'Category Filter',
-                    child: _buildCategoryChips(),
-                  ),
-                  _divider(),
-                  _buildPoiSection(),
-                  _divider(),
-                  _buildSection(
-                    number: '4',
                     color: AppColors.text2,
                     title: 'Date & Start Time',
                     child: _buildDateTimeRow(),
-                    bottomPad: 16,
                   ),
+                  _divider(),
+                  _buildPoiSection(),
                 ],
               ),
             ),
@@ -865,6 +932,49 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // LOCATION BANNER
+  // ══════════════════════════════════════════════════════════
+  Widget _buildLocationBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      color: _locationLoading ? AppColors.oceanTint : AppColors.greenTint,
+      child: Row(
+        children: [
+          if (_locationLoading)
+            const SizedBox(
+              width: 14, height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.oceanDeep),
+            )
+          else
+            Icon(
+              _locationStatus == 'Location found'
+                  ? Icons.my_location_rounded
+                  : Icons.location_disabled_rounded,
+              size: 14,
+              color: _locationStatus == 'Location found' ? AppColors.green : AppColors.coral,
+            ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _locationLoading ? 'Getting your location...' : _locationStatus,
+              style: GoogleFonts.outfit(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: _locationLoading ? AppColors.oceanDeep : AppColors.green,
+              ),
+            ),
+          ),
+          if (!_locationLoading && _userLat != null)
+            Text(
+              '${_userLat!.toStringAsFixed(4)}, ${_userLng!.toStringAsFixed(4)}',
+              style: GoogleFonts.outfit(fontSize: 10, color: AppColors.text3),
+            ),
+        ],
       ),
     );
   }
@@ -991,57 +1101,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
   }
 
   // ══════════════════════════════════════════════════════════
-  // SECTION 2 — CATEGORY CHIPS
-  // ══════════════════════════════════════════════════════════
-  Widget _buildCategoryChips() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: List.generate(_categories.length, (i) {
-        final cat = _categories[i];
-        final isActive = _selectedCats.contains(i);
-        return GestureDetector(
-          onTap: () => setState(() {
-            isActive ? _selectedCats.remove(i) : _selectedCats.add(i);
-          }),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: isActive ? AppColors.oceanDeep : AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadius.full),
-              border: Border.all(
-                color: isActive ? AppColors.oceanDeep : AppColors.border,
-                width: 1.5,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  cat.icon,
-                  size: 15,
-                  color: isActive ? Colors.white : AppColors.text2,
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  cat.label,
-                  style: GoogleFonts.outfit(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: isActive ? Colors.white : AppColors.text2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════
-  // SECTION 3 — POI CHECKLIST
+  // SECTION 2 — POI CHECKLIST
   // ══════════════════════════════════════════════════════════
   Widget _buildPoiSection() {
     final checkedCount = _checkedPois.length;
@@ -1066,26 +1126,58 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       color: AppColors.coral,
       title: 'Must-See POIs',
       trailing: countPill,
-      child: _buildPoiList(),
+      child: Column(
+        children: [
+          // Search bar
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(AppRadius.full),
+              border: Border.all(color: AppColors.border, width: 1.5),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search_rounded, size: 18, color: AppColors.text3),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    onChanged: (v) => setState(() => _poiSearchQuery = v),
+                    style: GoogleFonts.outfit(fontSize: 13, color: AppColors.text1),
+                    decoration: InputDecoration(
+                      hintText: 'Search attractions, beaches...',
+                      hintStyle: GoogleFonts.outfit(fontSize: 13, color: AppColors.text3),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
+                ),
+                if (_poiSearchQuery.isNotEmpty)
+                  GestureDetector(
+                    onTap: () => setState(() => _poiSearchQuery = ''),
+                    child: const Icon(Icons.close_rounded, size: 16, color: AppColors.text3),
+                  ),
+              ],
+            ),
+          ),
+          _buildPoiList(),
+        ],
+      ),
     );
   }
 
   Widget _buildPoiList() {
-    final activeCatLabels = _selectedCats
-        .map((i) => _categories[i].label.toLowerCase())
-        .toSet();
-
-    bool matchesCat(PoiItem p) {
-      if (activeCatLabels.isEmpty) return true;
-      return activeCatLabels.contains(p.category.toLowerCase());
+    bool matchesSearch(PoiItem p) {
+      if (_poiSearchQuery.trim().isEmpty) return true;
+      final q = _poiSearchQuery.trim().toLowerCase();
+      return p.name.toLowerCase().contains(q) || p.category.toLowerCase().contains(q);
     }
 
-    final savedPois = _allPois
-        .where((p) => p.isSavedPoi && matchesCat(p))
-        .toList();
-    final staticPois = _allPois
-        .where((p) => !p.isSavedPoi && matchesCat(p))
-        .toList();
+    final savedPois = _allPois.where((p) => p.isSavedPoi && matchesSearch(p)).toList();
+    final staticPois = _allPois.where((p) => !p.isSavedPoi && matchesSearch(p)).toList();
 
     if (savedPois.isEmpty && staticPois.isEmpty) {
       return Container(
@@ -1189,12 +1281,95 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
     );
   }
 
+  void _showCustomDurationSheet(PoiItem poi) {
+    int tempMinutes = poi.stayMinutes;
+    final suggested = _suggestedStayMinutes(poi.category);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setModal) => Container(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              Text('Custom Stay Duration', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text1)),
+              const SizedBox(height: 4),
+              Text(poi.name, style: GoogleFonts.outfit(fontSize: 13, color: AppColors.text2)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.oceanTint,
+                  borderRadius: BorderRadius.circular(AppRadius.full),
+                ),
+                child: Text('Suggested: ${suggested}min for ${poi.category}',
+                  style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.oceanDeep)),
+              ),
+              const SizedBox(height: 20),
+              Text('${tempMinutes} minutes',
+                style: GoogleFonts.playfairDisplay(fontSize: 28, fontWeight: FontWeight.w700, color: AppColors.oceanDeep)),
+              Slider(
+                value: tempMinutes.toDouble(),
+                min: 15,
+                max: 300,
+                divisions: 19,
+                label: '${tempMinutes}min',
+                activeColor: AppColors.oceanDeep,
+                inactiveColor: AppColors.oceanTint,
+                onChanged: (v) => setModal(() => tempMinutes = v.round()),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('15 min', style: GoogleFonts.outfit(fontSize: 10, color: AppColors.text3)),
+                  Text('5 hours', style: GoogleFonts.outfit(fontSize: 10, color: AppColors.text3)),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () {
+                    setState(() => poi.stayMinutes = tempMinutes);
+                    Navigator.pop(ctx);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.oceanDeep,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.full)),
+                  ),
+                  child: Text('Set Duration', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPoiRow(PoiItem poi) {
     final idx = _allPois.indexOf(poi);
     final checked = poi.checked;
 
     return GestureDetector(
-      onTap: () => setState(() => _allPois[idx].checked = !checked),
+      onTap: () => setState(() {
+        _allPois[idx].checked = !checked;
+        if (!checked) {
+          // Auto-set suggested stay when first checked
+          _allPois[idx].stayMinutes = _suggestedStayMinutes(_allPois[idx].category);
+        }
+      }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         margin: const EdgeInsets.only(bottom: 10),
@@ -1208,151 +1383,220 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
           ),
           boxShadow: shadowSm,
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              child: SizedBox(
-                width: 52,
-                height: 52,
-                child: Image.asset(
-                  poi.imagePath,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: poi.thumbGradient.length >= 2
-                            ? poi.thumbGradient
-                            : [
-                                poi.thumbGradient.first,
-                                poi.thumbGradient.first,
-                              ],
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  child: SizedBox(
+                    width: 52,
+                    height: 52,
+                    child: Image.asset(
+                      poi.imagePath,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: poi.thumbGradient.length >= 2
+                                ? poi.thumbGradient
+                                : [
+                                    poi.thumbGradient.first,
+                                    poi.thumbGradient.first,
+                                  ],
+                          ),
+                        ),
+                        child: Icon(
+                          poi.thumbIcon,
+                          size: 26,
+                          color: Colors.white.withOpacity(0.75),
+                        ),
                       ),
-                    ),
-                    child: Icon(
-                      poi.thumbIcon,
-                      size: 26,
-                      color: Colors.white.withOpacity(0.75),
                     ),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          poi.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.outfit(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.text1,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              poi.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.outfit(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.text1,
+                              ),
+                            ),
                           ),
-                        ),
+                          if (poi.isSavedPoi)
+                            Container(
+                              margin: const EdgeInsets.only(left: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.goldTint,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                'Saved',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.gold,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      if (poi.isSavedPoi)
-                        Container(
-                          margin: const EdgeInsets.only(left: 6),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface2,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              poi.category,
+                              style: GoogleFonts.outfit(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.text2,
+                              ),
+                            ),
                           ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.near_me_rounded,
+                            size: 11,
+                            color: AppColors.oceanMid,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            poi.distance,
+                            style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              color: AppColors.text2,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(Icons.star_rounded, size: 11, color: AppColors.gold),
+                          const SizedBox(width: 2),
+                          Text(
+                            poi.rating.toStringAsFixed(1),
+                            style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.text2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: checked ? AppColors.oceanDeep : AppColors.surface,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    border: Border.all(
+                      color: checked ? AppColors.oceanDeep : AppColors.border,
+                      width: 2,
+                    ),
+                  ),
+                  child: checked
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 14,
+                          color: Colors.white,
+                        )
+                      : null,
+                ),
+              ],
+            ),
+            if (checked) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.oceanDeep.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.schedule_rounded, size: 14, color: AppColors.oceanDeep),
+                    const SizedBox(width: 6),
+                    Text('Stay duration:', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.text2)),
+                    const Spacer(),
+                    ...[30, 60, 90, 120].map((mins) {
+                      final isSelected = poi.stayMinutes == mins;
+                      final label = mins < 60
+                          ? '${mins}m'
+                          : '${mins ~/ 60}h${mins % 60 > 0 ? " ${mins % 60}m" : ""}';
+                      return GestureDetector(
+                        onTap: () => setState(() => poi.stayMinutes = mins),
+                        child: Container(
+                          margin: const EdgeInsets.only(left: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: AppColors.goldTint,
-                            borderRadius: BorderRadius.circular(999),
+                            color: isSelected ? AppColors.oceanDeep : AppColors.surface,
+                            borderRadius: BorderRadius.circular(AppRadius.full),
+                            border: Border.all(
+                              color: isSelected ? AppColors.oceanDeep : AppColors.border,
+                            ),
                           ),
                           child: Text(
-                            'Saved',
+                            label,
                             style: GoogleFonts.outfit(
-                              fontSize: 9,
+                              fontSize: 10,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.gold,
+                              color: isSelected ? Colors.white : AppColors.text2,
                             ),
                           ),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
+                      );
+                    }),
+                    GestureDetector(
+                      onTap: () => _showCustomDurationSheet(poi),
+                      child: Container(
+                        margin: const EdgeInsets.only(left: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: AppColors.surface2,
-                          borderRadius: BorderRadius.circular(999),
+                          color: ![30, 60, 90, 120].contains(poi.stayMinutes) ? AppColors.oceanDeep : AppColors.surface,
+                          borderRadius: BorderRadius.circular(AppRadius.full),
+                          border: Border.all(color: ![30, 60, 90, 120].contains(poi.stayMinutes) ? AppColors.oceanDeep : AppColors.border),
                         ),
                         child: Text(
-                          poi.category,
+                          ![30, 60, 90, 120].contains(poi.stayMinutes) ? '${poi.stayMinutes}m' : 'Other',
                           style: GoogleFonts.outfit(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.text2,
-                          ),
+                            fontSize: 10, fontWeight: FontWeight.w700,
+                            color: ![30, 60, 90, 120].contains(poi.stayMinutes) ? Colors.white : AppColors.text2),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Icon(
-                        Icons.near_me_rounded,
-                        size: 11,
-                        color: AppColors.oceanMid,
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        poi.distance,
-                        style: GoogleFonts.outfit(
-                          fontSize: 11,
-                          color: AppColors.text2,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Icon(Icons.star_rounded, size: 11, color: AppColors.gold),
-                      const SizedBox(width: 2),
-                      Text(
-                        poi.rating.toStringAsFixed(1),
-                        style: GoogleFonts.outfit(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.text2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: checked ? AppColors.oceanDeep : AppColors.surface,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-                border: Border.all(
-                  color: checked ? AppColors.oceanDeep : AppColors.border,
-                  width: 2,
+                    ),
+                  ],
                 ),
               ),
-              child: checked
-                  ? const Icon(
-                      Icons.check_rounded,
-                      size: 14,
-                      color: Colors.white,
-                    )
-                  : null,
-            ),
+            ],
           ],
         ),
       ),
@@ -1480,9 +1724,14 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  count == 0
-                      ? 'Select at least one place to continue'
-                      : 'Generating route for $count place${count == 1 ? '' : 's'}',
+                  () {
+                    if (count == 0) return 'Select at least one place to continue';
+                    final totalStayMins = _checkedPois.fold<int>(0, (acc, p) => acc + p.stayMinutes);
+                    final stayH = totalStayMins ~/ 60;
+                    final stayM = totalStayMins % 60;
+                    final stayText = stayM == 0 ? '${stayH}h stay' : '${stayH}h ${stayM}m stay';
+                    return '$count place${count == 1 ? '' : 's'} · $stayText + travel time';
+                  }(),
                   style: GoogleFonts.outfit(
                     fontSize: 11,
                     color: AppColors.text3,

@@ -13,6 +13,7 @@ import 'screen7_generateItinerary.dart';
 import 'screen11_trips.dart';
 import 'screen12_profile.dart';
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../app_store.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1023,7 +1024,11 @@ class _HomeScreenState extends State<HomeScreen>
   // ── TRENDING ─────────────────────────────────────────────
   List<_PoiCard> get _trendingCards {
     final sourcePois = _firestorePois.isNotEmpty ? _firestorePois : _poiCards;
-    return sourcePois.where((c) => c.rating >= 4.7).take(5).toList();
+    final highRated = sourcePois.where((c) => c.rating >= 4.5).toList();
+    // Shuffle based on week number so it changes weekly but stays consistent
+    final weekNumber = DateTime.now().millisecondsSinceEpoch ~/ (7 * 24 * 60 * 60 * 1000);
+    highRated.shuffle(Random(weekNumber));
+    return highRated.take(5).toList();
   }
 
   // ── FILTERED POI ─────────────────────────────────────────
@@ -1211,19 +1216,25 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildAvatar() {
-    return Container(
-      width: 38,
-      height: 38,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.oceanDeep, AppColors.oceanMid],
-        ),
-        border: Border.all(color: AppColors.gold, width: 2),
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
       ),
-      child: const Icon(Icons.person_rounded, size: 18, color: Colors.white),
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [AppColors.oceanDeep, AppColors.oceanMid],
+          ),
+          border: Border.all(color: AppColors.gold, width: 2),
+        ),
+        child: const Icon(Icons.person_rounded, size: 18, color: Colors.white),
+      ),
     );
   }
 

@@ -1166,7 +1166,7 @@ class _TripsScreenState extends State<TripsScreen>
           _navItem(navItems[0], onTap: () => Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const HomeScreen()), (route) => false)),
           _navItem(navItems[1], onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ExploreScreen()))),
           Column(mainAxisSize: MainAxisSize.min, children: [
-            Transform.translate(offset: const Offset(0, -22), child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Transform.translate(offset: const Offset(0, -18), child: Column(mainAxisSize: MainAxisSize.min, children: [
               GestureDetector(
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GenerateItineraryScreen())),
                 child: AnimatedBuilder(animation: _sheenAnim, builder: (_, __) => Container(

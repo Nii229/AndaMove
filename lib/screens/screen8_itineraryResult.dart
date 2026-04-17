@@ -149,10 +149,13 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   int _activeStopIndex = 0;
   late final TextEditingController _nameCtrl;
   bool _isEditingName = false;
+  late List<PoiItem> _orderedPois;
+  bool _isReordering = false;
 
   @override
   void initState() {
     super.initState();
+    _orderedPois = List.from(widget.selectedPois);
     _sheenCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
@@ -193,11 +196,11 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
               ? 'My Phuket Itinerary'
               : _nameCtrl.text.trim(),
           totalDuration: _totalDuration,
-          stops: widget.selectedPois
+          stops: _orderedPois
               .map((p) => StoredTripStop(
                     name: p.name,
                     type: p.category,
-                    duration: '45 min',
+                    duration: '${p.stayMinutes} min',
                     distance: p.distance,
                   ))
               .toList(),
@@ -224,13 +227,13 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => NavigationScreen(tripId: widget.tripId),
+        builder: (_) => NavigationScreen(tripId: widget.tripId, selectedPois: _orderedPois),
       ),
     );
   }
 
   void _openRouteMap() async {
-    final pois = widget.selectedPois;
+    final pois = _orderedPois;
     final hasCoords = pois.every((p) => p.latitude != 0.0 && p.longitude != 0.0);
 
     if (!hasCoords) {
@@ -425,8 +428,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
       context,
       MaterialPageRoute(
         builder: (_) => GenerateItineraryScreen(
-          preSelectedPoiNames:
-              widget.selectedPois.map((p) => p.name).toList(),
+          preSelectedPoiNames: _orderedPois.map((p) => p.name).toList(),
         ),
       ),
     );
@@ -448,7 +450,10 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   }
 
   TimeOfDay _timeAtStop(int index) {
-    final totalMins = widget.time.hour * 60 + widget.time.minute + index * 60;
+    int totalMins = widget.time.hour * 60 + widget.time.minute;
+    for (int i = 0; i < index; i++) {
+      totalMins += _orderedPois[i].stayMinutes + 15; // stay + travel buffer
+    }
     return TimeOfDay(hour: (totalMins ~/ 60) % 24, minute: totalMins % 60);
   }
 
@@ -471,9 +476,11 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   }
 
   String get _totalDuration {
-    final mins = widget.selectedPois.length * 60;
-    final h = mins ~/ 60;
-    final m = mins % 60;
+    final stayMins = _orderedPois.fold<int>(0, (acc, p) => acc + p.stayMinutes);
+    final travelMins = _orderedPois.length * 15;
+    final totalMins = stayMins + travelMins;
+    final h = totalMins ~/ 60;
+    final m = totalMins % 60;
     return m == 0 ? '${h}h' : '${h}h ${m}m';
   }
 
@@ -663,7 +670,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
                           AppColors.oceanMid),
                       _hbBadge(Icons.schedule_rounded, _totalDuration, AppColors.goldLight),
                       _hbBadge(Icons.location_on_rounded,
-                          '${widget.selectedPois.length} stops', AppColors.greenLight),
+                          '${_orderedPois.length} stops', AppColors.greenLight),
                     ],
                   ),
                 ],
@@ -745,7 +752,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   Widget _buildStatsRow() {
     final stats = [
       (Icons.location_on_rounded, AppColors.oceanTint, AppColors.oceanDeep,
-          '${widget.selectedPois.length}', 'Stops'),
+          '${_orderedPois.length}', 'Stops'),
       (Icons.schedule_rounded, AppColors.goldTint, AppColors.gold, _totalDuration, 'Total'),
       (Icons.flag_rounded, AppColors.greenTint, AppColors.green,
           _formatTime(widget.time), 'Start'),
@@ -795,7 +802,6 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     );
   }
 
-  // ── [CHANGED] "Edit stops" now pushes screen7 forward ─────
   Widget _buildSectionHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
@@ -807,10 +813,42 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
             )),
           const Spacer(),
           GestureDetector(
+            onTap: () => setState(() => _isReordering = !_isReordering),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                color: _isReordering ? AppColors.oceanDeep : AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadius.full),
+                border: Border.all(
+                  color: _isReordering ? AppColors.oceanDeep : AppColors.border,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _isReordering ? Icons.check_rounded : Icons.swap_vert_rounded,
+                    size: 14,
+                    color: _isReordering ? Colors.white : AppColors.oceanDeep,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _isReordering ? 'Done' : 'Reorder',
+                    style: GoogleFonts.outfit(
+                      fontSize: 12, fontWeight: FontWeight.w700,
+                      color: _isReordering ? Colors.white : AppColors.oceanDeep,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
             onTap: _onEditStops,
             child: Text('Edit stops',
               style: GoogleFonts.outfit(
-                fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.oceanDeep,
+                fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text3,
               )),
           ),
         ],
@@ -822,7 +860,9 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   // TIMELINE
   // ══════════════════════════════════════════════════════════
   Widget _buildTimeline() {
-    final pois  = widget.selectedPois;
+    if (_isReordering) return _buildReorderList();
+
+    final pois  = _orderedPois;
     final items = <Widget>[];
 
     for (int i = 0; i < pois.length; i++) {
@@ -847,6 +887,125 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(children: items),
+    );
+  }
+
+  Widget _buildReorderList() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.oceanTint,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: AppColors.oceanDeep.withOpacity(0.15)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, size: 14, color: AppColors.oceanDeep),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Long press and drag to reorder stops',
+                    style: GoogleFonts.outfit(fontSize: 12, color: AppColors.oceanDeep)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _orderedPois.length,
+            onReorder: (oldIndex, newIndex) {
+              setState(() {
+                if (newIndex > oldIndex) newIndex--;
+                final item = _orderedPois.removeAt(oldIndex);
+                _orderedPois.insert(newIndex, item);
+              });
+            },
+            proxyDecorator: (child, index, animation) => Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              color: Colors.transparent,
+              child: child,
+            ),
+            itemBuilder: (_, i) {
+              final poi = _orderedPois[i];
+              return Container(
+                key: ValueKey(poi.name),
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                  border: Border.all(color: AppColors.borderLight),
+                  boxShadow: shadowSm,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(
+                        color: i == 0
+                            ? AppColors.green
+                            : i == _orderedPois.length - 1
+                                ? AppColors.gold
+                                : AppColors.oceanDeep,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text('${i + 1}',
+                          style: GoogleFonts.outfit(
+                            fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white,
+                          )),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      child: SizedBox(
+                        width: 40, height: 40,
+                        child: Image.asset(poi.imagePath, fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: poi.thumbGradient.length >= 2
+                                    ? poi.thumbGradient
+                                    : [poi.thumbGradient.first, poi.thumbGradient.first],
+                              ),
+                            ),
+                            child: Icon(poi.thumbIcon, size: 18,
+                              color: Colors.white.withOpacity(0.8)),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(poi.name,
+                            style: GoogleFonts.outfit(
+                              fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text1,
+                            ),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                          Text('${poi.category} · Stay: ${poi.stayMinutes} min',
+                            style: GoogleFonts.outfit(fontSize: 11, color: AppColors.text2)),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.drag_handle_rounded, color: AppColors.text3, size: 20),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -1018,7 +1177,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
           Row(children: [
             const Icon(Icons.hourglass_top_rounded, size: 12, color: AppColors.text3),
             const SizedBox(width: 4),
-            Text('Suggested stay: 45 min',
+            Text('Stay: ${poi.stayMinutes} min',
               style: GoogleFonts.outfit(fontSize: 11, color: AppColors.text2)),
           ]),
           const SizedBox(height: 8),
@@ -1220,6 +1379,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
                   MaterialPageRoute(
                     builder: (_) => NavigationScreen(
                       tripId: widget.tripId,
+                      selectedPois: _orderedPois,
                     ),
                   ),
                 ),

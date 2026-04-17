@@ -402,13 +402,13 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
                   Row(
                     children: [
                       Expanded(
-                        flex: 1,
+                        flex: 2,
                         child: SizedBox(
                           height: 54,
                           child: OutlinedButton.icon(
                             onPressed: _navigateToPoi,
                             icon: const Icon(Icons.navigation_rounded, size: 18),
-                            label: Text('Navigate', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700)),
+                            label: Text('Navigate on\nGoogle Maps', textAlign: TextAlign.center, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w700, height: 1.3)),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: _C.oceanDeep,
                               side: const BorderSide(color: _C.oceanDeep, width: 1.5),
@@ -419,7 +419,7 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        flex: 2,
+                        flex: 3,
                         child: SizedBox(
                           height: 54,
                           child: ElevatedButton.icon(

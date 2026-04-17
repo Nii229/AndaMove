@@ -1838,7 +1838,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Transform.translate(
-                  offset: const Offset(0, -22),
+                  offset: const Offset(0, -18),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [

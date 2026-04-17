@@ -9,10 +9,13 @@
 //   4. "End Trip" shows a confirmation bottom sheet then pushes screen11_trips
 // ============================================================
 
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'screen7_generateItinerary.dart' show PoiItem;
 import 'screen11_trips.dart';
 import '../app_store.dart';
 
@@ -273,8 +276,9 @@ class _NavStep {
 // STEP 8 — NAVIGATION SCREEN
 // ══════════════════════════════════════════════════════════════
 class NavigationScreen extends StatefulWidget {
-  final String? tripId; // ← add this
-  const NavigationScreen({super.key, this.tripId});
+  final String? tripId;
+  final List<PoiItem>? selectedPois;
+  const NavigationScreen({super.key, this.tripId, this.selectedPois});
 
   @override
   State<NavigationScreen> createState() => _NavigationScreenState();
@@ -282,98 +286,146 @@ class NavigationScreen extends StatefulWidget {
 
 class _NavigationScreenState extends State<NavigationScreen>
     with TickerProviderStateMixin {
-  // Beacon pulse: 2s repeat
-  late final AnimationController _beaconCtrl;
-  late final Animation<double> _beaconScale;
-  late final Animation<double> _beaconOpacity;
-
   // Sheen: 4s repeat
   late final AnimationController _sheenCtrl;
 
   // FIX 3: track which step the user is currently on
   int _currentStepIndex = 0;
 
-  // Step data (immutable)
-  static const List<_NavStep> _steps = [
-    _NavStep(
-      icon: Icons.turn_right_rounded,
-      iconColor: AppColors.oceanDeep,
-      iconBg: AppColors.oceanTint,
-      action: 'Turn right onto',
-      road: 'Karon–Kata Hill Rd',
-      secondaryInfo: 'Continue for 380 m',
-      distance: '380 m',
-    ),
-    _NavStep(
-      icon: Icons.turn_left_rounded,
-      iconColor: AppColors.oceanDeep,
-      iconBg: AppColors.oceanTint,
-      action: 'Turn left at',
-      road: 'Nakkerd Roundabout',
-      secondaryInfo: 'Soi Nakkerd 1',
-      distance: '1.2 km',
-    ),
-    _NavStep(
-      icon: Icons.straight_rounded,
-      iconColor: AppColors.oceanDeep,
-      iconBg: AppColors.oceanTint,
-      action: 'Continue straight uphill',
-      road: 'Nakkerd Hill Access Road',
-      secondaryInfo: 'Heading north',
-      distance: '800 m',
-    ),
-    _NavStep(
-      icon: Icons.flag_rounded,
-      iconColor: AppColors.gold,
-      iconBg: AppColors.goldTint,
-      action: 'Arrive at',
-      road: 'The Big Buddha',
-      secondaryInfo: 'Stop 2 of 4 · Park at base',
-      distance: 'Dest.',
-      isDestination: true,
-    ),
-  ];
+  GoogleMapController? _mapController;
+  List<LatLng> _routePoints = [];
+  bool _mapReady = false;
+
+  List<LatLng> get _routeStops {
+    if (widget.selectedPois != null && widget.selectedPois!.isNotEmpty) {
+      return widget.selectedPois!
+          .where((p) => p.latitude != 0.0 && p.longitude != 0.0)
+          .map((p) => LatLng(p.latitude, p.longitude))
+          .toList();
+    }
+    return const [
+      LatLng(7.8206, 98.2985),
+      LatLng(7.8275, 98.3133),
+      LatLng(7.8424, 98.3383),
+      LatLng(7.8847, 98.3882),
+    ];
+  }
+
+  List<String> get _stopNames {
+    if (widget.selectedPois != null && widget.selectedPois!.isNotEmpty) {
+      return widget.selectedPois!.map((p) => p.name).toList();
+    }
+    return const ['Kata Beach', 'The Big Buddha', 'Wat Chalong', 'Old Phuket Town'];
+  }
+
+  static const _mapsApiKey = 'AIzaSyB0CTGhgMeEQczyD3N1aM6ynx7hY3HO6kw';
+
+  List<_NavStep> get _steps {
+    final names = _stopNames;
+    final steps = <_NavStep>[];
+    for (int i = 0; i < names.length; i++) {
+      final isLast = i == names.length - 1;
+      if (isLast) {
+        steps.add(_NavStep(
+          icon: Icons.flag_rounded,
+          iconColor: AppColors.gold,
+          iconBg: AppColors.goldTint,
+          action: 'Arrive at',
+          road: names[i],
+          secondaryInfo: 'Stop ${i + 1} of ${names.length} · Final destination',
+          distance: 'Dest.',
+          isDestination: true,
+        ));
+      } else {
+        steps.add(_NavStep(
+          icon: i == 0 ? Icons.play_arrow_rounded : Icons.navigation_rounded,
+          iconColor: AppColors.oceanDeep,
+          iconBg: AppColors.oceanTint,
+          action: i == 0 ? 'Head to' : 'Continue to',
+          road: names[i],
+          secondaryInfo: 'Stop ${i + 1} of ${names.length}',
+          distance: widget.selectedPois != null && i < widget.selectedPois!.length
+              ? (widget.selectedPois![i].distance.isNotEmpty ? widget.selectedPois![i].distance : '—')
+              : '—',
+        ));
+      }
+    }
+    return steps;
+  }
 
   @override
   void initState() {
     super.initState();
 
-    _beaconCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat();
-
-    _beaconScale = Tween<double>(
-      begin: 1.0,
-      end: 2.5,
-    ).animate(CurvedAnimation(parent: _beaconCtrl, curve: Curves.easeOut));
-    _beaconOpacity = Tween<double>(
-      begin: 0.8,
-      end: 0.0,
-    ).animate(CurvedAnimation(parent: _beaconCtrl, curve: Curves.easeOut));
-
     _sheenCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat();
+    _loadRoute();
   }
 
   @override
   void dispose() {
-    _beaconCtrl.dispose();
     _sheenCtrl.dispose();
+    _mapController?.dispose();
     super.dispose();
   }
 
-  Future<void> _openGoogleMapsNavigation() async {
-    final url = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1'
-      '&destination=7.8804,98.3923'
-      '&travelmode=driving',
-    );
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
+  Future<void> _loadRoute() async {
+    try {
+      final origin = '${_routeStops.first.latitude},${_routeStops.first.longitude}';
+      final destination = '${_routeStops.last.latitude},${_routeStops.last.longitude}';
+      final waypoints = _routeStops.sublist(1, _routeStops.length - 1)
+          .map((p) => '${p.latitude},${p.longitude}')
+          .join('|');
+
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/directions/json'
+        '?origin=$origin'
+        '&destination=$destination'
+        '&waypoints=$waypoints'
+        '&mode=driving'
+        '&key=$_mapsApiKey',
+      );
+
+      final response = await http.get(url);
+      final data = jsonDecode(response.body);
+
+      if (data['status'] == 'OK' && data['routes'].isNotEmpty) {
+        final encoded = data['routes'][0]['overview_polyline']['points'] as String;
+        if (mounted) {
+          setState(() {
+            _routePoints = _decodePolyline(encoded);
+            _mapReady = true;
+          });
+        }
+      }
+    } catch (_) {
+      if (mounted) setState(() => _mapReady = true);
     }
+  }
+
+  List<LatLng> _decodePolyline(String encoded) {
+    final points = <LatLng>[];
+    int index = 0, lat = 0, lng = 0;
+    while (index < encoded.length) {
+      int shift = 0, result = 0, b;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1F) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      lat += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      shift = 0; result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1F) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      lng += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      points.add(LatLng(lat / 1E5, lng / 1E5));
+    }
+    return points;
   }
 
   // ──────────────────────────────────────────────────────────
@@ -382,8 +434,15 @@ class _NavigationScreenState extends State<NavigationScreen>
   void _onNextStop() {
     if (_currentStepIndex < _steps.length - 1) {
       setState(() => _currentStepIndex++);
+      if (_mapController != null && _currentStepIndex < _routeStops.length) {
+        _mapController!.animateCamera(
+          CameraUpdate.newCameraPosition(CameraPosition(
+            target: _routeStops[_currentStepIndex],
+            zoom: 15,
+          )),
+        );
+      }
     } else {
-      // Already at destination — prompt user to end trip
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -444,218 +503,95 @@ class _NavigationScreenState extends State<NavigationScreen>
   // MAP AREA
   // ══════════════════════════════════════════════════════════
   Widget _buildMapArea() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final w = constraints.maxWidth;
-        const mapH = 356.0;
-        return SizedBox(
-          width: w,
-          height: mapH,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF071520),
-                        Color(0xFF0A2535),
-                        Color(0xFF0A4060),
-                        Color(0xFF0A6080),
-                      ],
-                      stops: [0, .4, .7, 1],
-                    ),
-                  ),
+    final markers = <Marker>{};
+    for (int i = 0; i < _routeStops.length; i++) {
+      final isCurrent = i <= _currentStepIndex;
+      markers.add(Marker(
+        markerId: MarkerId('stop_$i'),
+        position: _routeStops[i],
+        infoWindow: InfoWindow(title: 'Stop ${i + 1}: ${_stopNames[i]}'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          i == 0
+              ? BitmapDescriptor.hueGreen
+              : i == _routeStops.length - 1
+                  ? BitmapDescriptor.hueOrange
+                  : isCurrent
+                      ? BitmapDescriptor.hueAzure
+                      : BitmapDescriptor.hueRed,
+        ),
+      ));
+    }
+
+    return SizedBox(
+      height: 356,
+      child: Stack(
+        children: [
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: _routeStops[0],
+              zoom: 13,
+            ),
+            markers: markers,
+            polylines: {
+              if (_routePoints.isNotEmpty)
+                Polyline(
+                  polylineId: const PolylineId('nav_route'),
+                  points: _routePoints,
+                  color: AppColors.oceanDeep,
+                  width: 5,
                 ),
-              ),
-              Positioned.fill(
-                child: CustomPaint(painter: MapBackgroundPainter()),
-              ),
-              Positioned.fill(child: CustomPaint(painter: RoutePainter())),
-              _mapPin(
-                top: mapH * 0.55,
-                left: w * 0.36,
-                bg: AppColors.green,
-                icon: Icons.flag_rounded,
-                label: 'Kata',
-                labelColor: Colors.white.withOpacity(0.9),
-              ),
-              _mapPin(
-                top: mapH * 0.28,
-                left: w * 0.56,
-                bg: AppColors.gold,
-                icon: Icons.temple_buddhist_rounded,
-                label: 'Big Buddha',
-                labelColor: AppColors.goldLight,
-              ),
-              _mapPin(
-                top: mapH * 0.20,
-                left: w * 0.72,
-                bg: Colors.white.withOpacity(0.10),
-                border: Colors.white.withOpacity(0.25),
-                icon: Icons.account_balance_rounded,
-                iconColor: AppColors.text3,
-                label: 'Chalong',
-                labelColor: AppColors.text3,
-              ),
-              _buildBeacon(top: mapH * 0.42, left: w * 0.38),
-              _buildMapTopControls(),
-              // Progress bar — advances with _currentStepIndex
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: SizedBox(
-                  height: 4,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: (_currentStepIndex + 1) * 25,
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [AppColors.oceanDeep, AppColors.oceanMid],
-                            ),
-                          ),
+            },
+            onMapCreated: (controller) {
+              _mapController = controller;
+              double minLat = _routeStops.first.latitude, maxLat = _routeStops.first.latitude;
+              double minLng = _routeStops.first.longitude, maxLng = _routeStops.first.longitude;
+              for (final s in _routeStops) {
+                if (s.latitude < minLat) minLat = s.latitude;
+                if (s.latitude > maxLat) maxLat = s.latitude;
+                if (s.longitude < minLng) minLng = s.longitude;
+                if (s.longitude > maxLng) maxLng = s.longitude;
+              }
+              Future.delayed(const Duration(milliseconds: 300), () {
+                controller.animateCamera(CameraUpdate.newLatLngBounds(
+                  LatLngBounds(
+                    southwest: LatLng(minLat - 0.005, minLng - 0.005),
+                    northeast: LatLng(maxLat + 0.005, maxLng + 0.005),
+                  ),
+                  50,
+                ));
+              });
+            },
+            myLocationEnabled: true,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+          ),
+          _buildMapTopControls(),
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            child: SizedBox(
+              height: 4,
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: (_currentStepIndex + 1) * 25,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [AppColors.oceanDeep, AppColors.oceanMid],
                         ),
                       ),
-                      Expanded(
-                        flex: 100 - (_currentStepIndex + 1) * 25,
-                        child: Container(color: Colors.white.withOpacity(0.10)),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _mapPin({
-    required double top,
-    required double left,
-    required Color bg,
-    Color? border,
-    required IconData icon,
-    Color iconColor = Colors.white,
-    required String label,
-    required Color labelColor,
-  }) {
-    return Positioned(
-      top: top,
-      left: left,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: bg,
-              shape: BoxShape.circle,
-              border: border != null
-                  ? Border.all(color: border, width: 1.5)
-                  : null,
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x4D000000),
-                  blurRadius: 12,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Icon(icon, size: 16, color: iconColor),
-          ),
-          Container(
-            width: 2,
-            height: 7,
-            decoration: BoxDecoration(
-              color: border ?? bg,
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(1),
-                bottomRight: Radius.circular(1),
-              ),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.50),
-              borderRadius: BorderRadius.circular(AppRadius.full),
-            ),
-            child: Text(
-              label,
-              style: GoogleFonts.outfit(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.6,
-                color: labelColor,
+                  Expanded(
+                    flex: 100 - (_currentStepIndex + 1) * 25,
+                    child: Container(color: Colors.white.withOpacity(0.10)),
+                  ),
+                ],
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildBeacon({required double top, required double left}) {
-    return Positioned(
-      top: top,
-      left: left,
-      child: SizedBox(
-        width: 40,
-        height: 44,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Positioned(
-              top: 0,
-              child: Text(
-                'You',
-                style: GoogleFonts.outfit(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.oceanMid,
-                  shadows: const [
-                    Shadow(color: Color(0x99000000), blurRadius: 4),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 2,
-              child: AnimatedBuilder(
-                animation: _beaconCtrl,
-                builder: (_, __) => Opacity(
-                  opacity: _beaconOpacity.value,
-                  child: Transform.scale(
-                    scale: _beaconScale.value,
-                    child: Container(
-                      width: 20,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.oceanMid, width: 2),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 4,
-              child: CustomPaint(
-                size: const Size(20, 20),
-                painter: BeaconDotPainter(),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -686,7 +622,7 @@ class _NavigationScreenState extends State<NavigationScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'To: The Big Buddha',
+                  'To: ${_currentStepIndex < _stopNames.length ? _stopNames[_currentStepIndex] : _stopNames.last}',
                   style: GoogleFonts.outfit(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -694,7 +630,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                   ),
                 ),
                 Text(
-                  'Stop 2 of 4',
+                  'Stop ${_currentStepIndex + 1} of ${_stopNames.length}',
                   style: GoogleFonts.outfit(
                     fontSize: 10,
                     color: Colors.white.withOpacity(0.50),
@@ -1057,44 +993,19 @@ class _NavigationScreenState extends State<NavigationScreen>
                     borderRadius: BorderRadius.circular(AppRadius.full),
                     boxShadow: [shadowOcean],
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(AppRadius.full),
-                    child: Stack(
+                  child: Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: SheenPainter(_sheenCtrl.value),
-                          ),
-                        ),
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: _openGoogleMapsNavigation,
-                            splashColor: Colors.white.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(AppRadius.full),
-                            child: Center(
-                              child: Row(
-                                mainAxisSize: MainAxisSize
-                                    .min, // ← shrink-wrap so Center can actually center it
-                                children: [
-                                  const Icon(
-                                    Icons.navigation_rounded,
-                                    color: Colors.white,
-                                    size: 19,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Next Stop',
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                      letterSpacing: 0.3,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                        const Icon(Icons.navigation_rounded, color: Colors.white, size: 19),
+                        const SizedBox(width: 8),
+                        Text(
+                          isLastStep ? 'Arrived!' : 'Next Stop',
+                          style: GoogleFonts.outfit(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.3,
                           ),
                         ),
                       ],
