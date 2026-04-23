@@ -14,6 +14,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
 import '../app_store.dart';
 import 'package:video_player/video_player.dart';
 
@@ -493,13 +494,30 @@ class _StoryPageState extends State<_StoryPage> {
     ]);
   }
 
+  void _shareVlog(StoryVlog story) {
+    final stopLines = story.stops
+        .map((s) => '📍 ${s.name} · ${s.duration}')
+        .join('\n');
+    final text = '🎬 ${story.title}\n'
+        '📍 ${story.location}\n'
+        '🎥 by ${story.creatorName}\n\n'
+        'Itinerary (${story.totalDuration} · ${story.stopCount} stops):\n'
+        '$stopLines\n\n'
+        'Discover Phuket with AndaMove 👉 https://andamove.app';
+    Share.share(text);
+  }
+
   Widget _buildActionColumn() {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       _ActionButton(icon: widget.story.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
         label: widget.story.isSaved ? 'Saved' : 'Save', active: widget.story.isSaved,
         activeColor: AppColors.goldLight, onTap: widget.onSaveToggle),
       const SizedBox(height: 20),
-      _ActionButton(icon: Icons.ios_share_rounded, label: 'Share', onTap: () {}),
+      _ActionButton(
+        icon: Icons.ios_share_rounded,
+        label: 'Share',
+        onTap: () => _shareVlog(widget.story),
+      ),
       const SizedBox(height: 20),
       _ItineraryButton(onTap: widget.onViewItinerary),
     ]);

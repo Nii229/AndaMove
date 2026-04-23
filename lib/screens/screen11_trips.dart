@@ -13,6 +13,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:share_plus/share_plus.dart';
 import '../app_store.dart';
 import 'screen7_generateItinerary.dart' show GenerateItineraryScreen, PoiItem;
 import 'screen8_itineraryResult.dart' show ItineraryResultScreen, ItineraryViewMode;
@@ -289,8 +292,11 @@ class _TripsScreenState extends State<TripsScreen>
   int _selectedTab = 0;
 
   late List<_Trip> _trips;
+  List<_Trip> _firestoreTrips = [];
+  bool _tripsLoaded = false;
   final List<_Trip> _duplicatedTrips = [];
   final Set<String> _archivedIds = {};
+  List<_Trip> _archivedTrips = [];
   final Set<String> _deletedIds = {};
   final Map<String, String> _renamedTrips = {};
 
@@ -515,11 +521,49 @@ class _TripsScreenState extends State<TripsScreen>
     return trip.status;
   }
 
-  List<_Trip> get _visibleTrips => [
-    ..._trips.where((t) => !_deletedIds.contains(t.id) && !_archivedIds.contains(t.id)),
-    ..._duplicatedTrips.where((t) => !_deletedIds.contains(t.id) && !_archivedIds.contains(t.id)),
-    ...AppStore.followedTrips.map(_convertStoredTrip),
-  ];
+  List<_Trip> get _visibleTrips {
+    final localTrips = _trips.where((t) => !_deletedIds.contains(t.id) && !_archivedIds.contains(t.id)).toList();
+    final dupTrips = _duplicatedTrips.where((t) => !_deletedIds.contains(t.id) && !_archivedIds.contains(t.id)).toList();
+    final appStoreTrips = AppStore.followedTrips.map(_convertStoredTrip).toList();
+
+    // Merge all sources, avoid duplicates by ID
+    final seenIds = <String>{};
+    final merged = <_Trip>[];
+
+    // Firestore trips take priority
+    for (final t in _firestoreTrips) {
+      if (!seenIds.contains(t.id) && !_deletedIds.contains(t.id) && !_archivedIds.contains(t.id)) {
+        seenIds.add(t.id);
+        merged.add(t);
+      }
+    }
+
+    // Then AppStore trips (avoid duplicates already in Firestore)
+    for (final t in appStoreTrips) {
+      if (!seenIds.contains(t.id) && !_deletedIds.contains(t.id) && !_archivedIds.contains(t.id)) {
+        seenIds.add(t.id);
+        merged.add(t);
+      }
+    }
+
+    // Then local mock trips
+    for (final t in localTrips) {
+      if (!seenIds.contains(t.id)) {
+        seenIds.add(t.id);
+        merged.add(t);
+      }
+    }
+
+    // Then duplicated trips
+    for (final t in dupTrips) {
+      if (!seenIds.contains(t.id)) {
+        seenIds.add(t.id);
+        merged.add(t);
+      }
+    }
+
+    return merged;
+  }
 
   int _statusPriority(TripStatus s) {
     switch (s) {
@@ -531,6 +575,7 @@ class _TripsScreenState extends State<TripsScreen>
   }
 
   List<_Trip> get _filteredTrips {
+    if (_selectedTab == 4) return _archivedTrips;
     final all = _visibleTrips;
     List<_Trip> base;
     switch (_selectedTab) {
@@ -558,6 +603,7 @@ class _TripsScreenState extends State<TripsScreen>
       _FilterTab('Active ($active)'),
       _FilterTab('Upcoming ($soon)'),
       _FilterTab('Done ($done)'),
+      _FilterTab('Archived (${_archivedTrips.length})'),
     ];
   }
 
@@ -571,6 +617,81 @@ class _TripsScreenState extends State<TripsScreen>
     _sheenAnim = Tween<double>(begin: -1.5, end: 2.5).animate(
       CurvedAnimation(parent: _sheenCtrl, curve: Curves.easeInOut));
     AppStore.addListener(_onStoreUpdate);
+    _loadTripsFromFirestore();
+  }
+
+  Future<void> _loadTripsFromFirestore() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        if (mounted) setState(() => _tripsLoaded = true);
+        return;
+      }
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('trips')
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      _Trip docToTrip(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+        final d = doc.data();
+        final stops = (d['stops'] as List<dynamic>? ?? []).map((s) {
+          final stop = s as Map<String, dynamic>;
+          return StoredTripStop(
+            name: stop['name'] as String? ?? '',
+            type: stop['category'] as String? ?? 'Place',
+            duration: '${stop['stayMinutes'] ?? 60} min',
+            distance: stop['distance'] as String? ?? '',
+          );
+        }).toList();
+
+        final date = (d['date'] as Timestamp?)?.toDate();
+        final transport = d['transport'] as String? ?? 'Walk';
+        final startHour = d['startHour'] as int? ?? 9;
+        final startMinute = d['startMinute'] as int? ?? 0;
+
+        final stored = StoredTrip(
+          id: doc.id,
+          name: d['name'] as String? ?? 'Untitled Trip',
+          totalDuration: d['totalDuration'] as String? ?? '',
+          stops: stops,
+          sourceVlogId: doc.id,
+          tripDate: date,
+          transport: transport,
+          startHour: startHour,
+          startMinute: startMinute,
+        );
+        return _convertStoredTrip(stored);
+      }
+
+      final trips = snapshot.docs
+          .where((doc) => (doc.data()['status'] as String?) != 'archived')
+          .map(docToTrip)
+          .toList();
+
+      // Load archived trips separately
+      final archivedSnap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('trips')
+          .where('status', isEqualTo: 'archived')
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      final archived = archivedSnap.docs.map(docToTrip).toList();
+
+      if (mounted) {
+        setState(() {
+          _firestoreTrips = trips;
+          _archivedTrips = archived;
+          _tripsLoaded = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _tripsLoaded = true);
+    }
   }
 
   @override
@@ -644,6 +765,7 @@ class _TripsScreenState extends State<TripsScreen>
           Navigator.push(context, MaterialPageRoute(
             builder: (_) => GenerateItineraryScreen(
               preSelectedPoiNames: stored.stops.map((s) => s.name).toList(),
+              preSelectedTransport: stored.transport,
             ),
           ));
           break;
@@ -678,13 +800,20 @@ class _TripsScreenState extends State<TripsScreen>
         ));
         break;
 
-      // ── D. Continue Editing → screen7 ───────────────────────
+      // ── D. Continue Editing → screen7 with date/time/transport ─
       case TripStatus.draft:
         final poiNames = _tripPoiNames[trip.id]
             ?? stored?.stops.map((s) => s.name).toList()
             ?? [];
         Navigator.push(context, MaterialPageRoute(
-          builder: (_) => GenerateItineraryScreen(preSelectedPoiNames: poiNames),
+          builder: (_) => GenerateItineraryScreen(
+            preSelectedPoiNames: poiNames,
+            preSelectedDate: stored?.tripDate,
+            preSelectedTime: stored != null
+                ? TimeOfDay(hour: stored.startHour, minute: stored.startMinute)
+                : null,
+            preSelectedTransport: stored?.transport,
+          ),
         ));
         break;
     }
@@ -705,7 +834,7 @@ class _TripsScreenState extends State<TripsScreen>
       return PoiItem(
         name: s.name, category: s.type, rating: 4.5, distance: s.distance,
         thumbIcon: icon, thumbGradient: grad,
-        imagePath: 'assets/images/${s.name.toLowerCase().replaceAll(' ', '_')}.jpg',
+        imagePath: 'assets/images/${s.name.toLowerCase().replaceAll(' ', '_').replaceAll('&', 'and')}.jpg',
       );
     }).toList();
   }
@@ -757,16 +886,46 @@ class _TripsScreenState extends State<TripsScreen>
   }
 
   void _showKebabMenu(_Trip trip) {
+    final isArchived = _selectedTab == 4;
     showModalBottomSheet(
       context: context, backgroundColor: Colors.transparent,
       builder: (_) => _KebabSheet(
         tripName: _displayName(trip),
+        isArchived: isArchived,
         onRename: () { Navigator.pop(context); _showRenameDialog(trip); },
         onDuplicate: () { Navigator.pop(context); _duplicateTrip(trip); },
-        onArchive: () {
+        onArchive: () async {
           Navigator.pop(context);
+          try {
+            final user = FirebaseAuth.instance.currentUser;
+            if (user != null) {
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(user.uid)
+                  .collection('trips')
+                  .doc(trip.id)
+                  .update({'status': 'archived'});
+            }
+          } catch (_) {}
           setState(() => _archivedIds.add(trip.id));
+          await _loadTripsFromFirestore();
           _showSnack('"${_displayName(trip)}" archived', AppColors.text2);
+        },
+        onUnarchive: () async {
+          Navigator.pop(context);
+          try {
+            final user = FirebaseAuth.instance.currentUser;
+            if (user != null) {
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(user.uid)
+                  .collection('trips')
+                  .doc(trip.id)
+                  .update({'status': 'upcoming'});
+            }
+          } catch (_) {}
+          await _loadTripsFromFirestore();
+          _showSnack('"${_displayName(trip)}" unarchived', AppColors.oceanDeep);
         },
         onDelete: () { Navigator.pop(context); _showDeleteSheet(trip); },
       ),
@@ -821,8 +980,14 @@ class _TripsScreenState extends State<TripsScreen>
 
   void _showShareSheet(_Trip trip) {
     showModalBottomSheet(
-      context: context, backgroundColor: Colors.transparent,
-      builder: (_) => _ShareSheet(tripName: _displayName(trip)),
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ShareSheet(
+        tripName: _displayName(trip),
+        stops: trip.stops,
+        date: trip.date,
+        duration: trip.stats.length > 1 ? trip.stats[1].value : '',
+      ),
     );
   }
 
@@ -831,9 +996,22 @@ class _TripsScreenState extends State<TripsScreen>
       context: context, backgroundColor: Colors.transparent,
       builder: (_) => _DeleteSheet(
         tripName: _displayName(trip),
-        onConfirm: () {
+        onConfirm: () async {
           Navigator.pop(context);
+          // Delete from Firestore
+          try {
+            final user = FirebaseAuth.instance.currentUser;
+            if (user != null) {
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(user.uid)
+                  .collection('trips')
+                  .doc(trip.id)
+                  .delete();
+            }
+          } catch (_) {}
           setState(() => _deletedIds.add(trip.id));
+          _loadTripsFromFirestore(); // Refresh
           _showSnack('"${_displayName(trip)}" deleted', AppColors.coral);
         },
         onCancel: () => Navigator.pop(context),
@@ -918,7 +1096,7 @@ class _TripsScreenState extends State<TripsScreen>
   }
 
   Widget _buildEmptyState() {
-    final labels = ['trips', 'active trips', 'upcoming trips', 'completed trips'];
+    final labels = ['trips', 'active trips', 'upcoming trips', 'completed trips', 'archived trips'];
     final label = labels[_selectedTab.clamp(0, labels.length - 1)];
     return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
       Container(width: 72, height: 72, decoration: const BoxDecoration(color: AppColors.surface2, shape: BoxShape.circle), child: const Icon(Icons.map_outlined, size: 32, color: AppColors.text3)),
@@ -1209,8 +1387,17 @@ class _TripsScreenState extends State<TripsScreen>
 // ══════════════════════════════════════════════════════════════
 class _KebabSheet extends StatelessWidget {
   final String tripName;
-  final VoidCallback onRename, onDuplicate, onArchive, onDelete;
-  const _KebabSheet({required this.tripName, required this.onRename, required this.onDuplicate, required this.onArchive, required this.onDelete});
+  final bool isArchived;
+  final VoidCallback onRename, onDuplicate, onArchive, onUnarchive, onDelete;
+  const _KebabSheet({
+    required this.tripName,
+    required this.isArchived,
+    required this.onRename,
+    required this.onDuplicate,
+    required this.onArchive,
+    required this.onUnarchive,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1223,11 +1410,14 @@ class _KebabSheet extends StatelessWidget {
         const SizedBox(height: 12),
         const Divider(color: AppColors.borderLight, height: 1),
         const SizedBox(height: 8),
-        _kebabItem(icon: Icons.drive_file_rename_outline_rounded, label: 'Rename',    color: AppColors.text1,     onTap: onRename),
-        _kebabItem(icon: Icons.content_copy_rounded,              label: 'Duplicate', color: AppColors.oceanDeep, onTap: onDuplicate),
-        _kebabItem(icon: Icons.archive_outlined,                  label: 'Archive',   color: AppColors.text2,     onTap: onArchive),
+        if (!isArchived) ...[
+          _kebabItem(icon: Icons.drive_file_rename_outline_rounded, label: 'Rename',    color: AppColors.text1,     onTap: onRename),
+          _kebabItem(icon: Icons.content_copy_rounded,              label: 'Duplicate', color: AppColors.oceanDeep, onTap: onDuplicate),
+          _kebabItem(icon: Icons.archive_outlined,                  label: 'Archive',   color: AppColors.text2,     onTap: onArchive),
+        ] else
+          _kebabItem(icon: Icons.unarchive_outlined,                label: 'Unarchive', color: AppColors.oceanDeep, onTap: onUnarchive),
         const Divider(color: AppColors.borderLight, height: 16),
-        _kebabItem(icon: Icons.delete_outline_rounded,            label: 'Delete',    color: AppColors.coral,     onTap: onDelete),
+        _kebabItem(icon: Icons.delete_outline_rounded,              label: 'Delete',    color: AppColors.coral,     onTap: onDelete),
       ]),
     );
   }
@@ -1246,44 +1436,74 @@ class _KebabSheet extends StatelessWidget {
 
 class _ShareSheet extends StatelessWidget {
   final String tripName;
-  const _ShareSheet({required this.tripName});
+  final List<_StopPill> stops;
+  final String date;
+  final String duration;
+
+  const _ShareSheet({
+    required this.tripName,
+    required this.stops,
+    required this.date,
+    required this.duration,
+  });
+
+  String _buildShareText() {
+    final stopNames = stops.map((s) => '📍 ${s.label}').join('\n');
+    return '🗺️ Check out my AndaMove itinerary!\n\n'
+        '🌴 $tripName\n'
+        '📅 $date\n'
+        '⏱️ $duration\n\n'
+        'Stops:\n$stopNames\n\n'
+        'Plan your Phuket trip with AndaMove 👉 https://andamove.app';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final options = [
-      (Icons.link_rounded,          'Copy Link',   AppColors.oceanDeep),
-      (Icons.chat_rounded,          'WhatsApp',    AppColors.green),
-      (Icons.camera_alt_rounded,    'Instagram',   AppColors.purple),
-      (Icons.picture_as_pdf_rounded,'Save as PDF', AppColors.coral),
-    ];
     return Container(
-      decoration: const BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 36),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20), decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
-        Row(children: [const Icon(Icons.share_rounded, size: 20, color: AppColors.text1), const SizedBox(width: 10), Text('Share Itinerary', style: GoogleFonts.outfit(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text1))]),
+        Container(
+          width: 40, height: 4,
+          margin: const EdgeInsets.only(bottom: 20),
+          decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+        ),
+        Row(children: [
+          const Icon(Icons.share_rounded, size: 20, color: AppColors.text1),
+          const SizedBox(width: 10),
+          Text('Share Itinerary', style: GoogleFonts.outfit(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text1)),
+        ]),
         const SizedBox(height: 4),
-        Align(alignment: Alignment.centerLeft, child: Text(tripName, style: GoogleFonts.outfit(fontSize: 12, color: AppColors.text3), maxLines: 1, overflow: TextOverflow.ellipsis)),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(tripName,
+            style: GoogleFonts.outfit(fontSize: 12, color: AppColors.text3),
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
         const SizedBox(height: 20),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: options.map((opt) {
-          final (icon, label, color) = opt;
-          return GestureDetector(
-            onTap: () {
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton.icon(
+            onPressed: () {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Shared via $label', style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
-                backgroundColor: color, behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
-                margin: const EdgeInsets.fromLTRB(16, 0, 16, 12), duration: const Duration(seconds: 2),
-              ));
+              SharePlus.instance.share(ShareParams(text: _buildShareText()));
             },
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: 52, height: 52, decoration: BoxDecoration(color: color.withOpacity(0.10), shape: BoxShape.circle, border: Border.all(color: color.withOpacity(0.20), width: 1.5)), child: Icon(icon, size: 22, color: color)),
-              const SizedBox(height: 6),
-              Text(label, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.text2)),
-            ]),
-          );
-        }).toList()),
+            icon: const Icon(Icons.ios_share_rounded, size: 18),
+            label: Text('Share Trip',
+              style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.oceanDeep,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.full)),
+            ),
+          ),
+        ),
       ]),
     );
   }

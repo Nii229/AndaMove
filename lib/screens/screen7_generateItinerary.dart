@@ -117,9 +117,17 @@ class GenerateItineraryScreen extends StatefulWidget {
   // Used by: Re-run Trip, Continue Editing, Edit Stops.
   final List<String>? preSelectedPoiNames;
 
+  // Pre-fill date/time/transport for Continue Editing and Edit Stops flows.
+  final DateTime? preSelectedDate;
+  final TimeOfDay? preSelectedTime;
+  final String? preSelectedTransport;
+
   const GenerateItineraryScreen({
     super.key,
     this.preSelectedPoiNames,
+    this.preSelectedDate,
+    this.preSelectedTime,
+    this.preSelectedTransport,
   });
 
   @override
@@ -446,6 +454,15 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
           poi.checked = true;
         }
       }
+    }
+    // ─────────────────────────────────────────────────────────
+
+    // ── Pre-fill date/time/transport for Continue Editing / Edit Stops ──
+    if (widget.preSelectedDate != null) _selectedDate = widget.preSelectedDate!;
+    if (widget.preSelectedTime != null) _selectedTime = widget.preSelectedTime!;
+    if (widget.preSelectedTransport != null) {
+      final idx = _transports.indexWhere((t) => t.label == widget.preSelectedTransport);
+      if (idx >= 0) _selectedTransport = idx;
     }
     // ─────────────────────────────────────────────────────────
 

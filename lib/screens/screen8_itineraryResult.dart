@@ -35,6 +35,9 @@ import 'screen9_mapView.dart';
 import 'screen10_navigation.dart';
 import 'screen11_trips.dart';
 import '../app_store.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 
 // ══════════════════════════════════════════════════════════════
 // VIEW MODE ENUM  [NEW]
@@ -151,11 +154,23 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   bool _isEditingName = false;
   late List<PoiItem> _orderedPois;
   bool _isReordering = false;
+  bool _locationPermissionGranted = false;
+  String? _savedTripId;
 
   @override
   void initState() {
     super.initState();
     _orderedPois = List.from(widget.selectedPois);
+
+    // FIX 3: restore active stop for in-progress trips
+    _savedTripId = widget.tripId;
+    if (widget.tripId != null && widget.viewMode == ItineraryViewMode.inProgress) {
+      _activeStopIndex = AppStore.getTripProgress(widget.tripId!);
+      if (_activeStopIndex >= _orderedPois.length) {
+        _activeStopIndex = _orderedPois.length - 1;
+      }
+    }
+
     _sheenCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
@@ -168,6 +183,30 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
         ? widget.selectedPois.first.name
         : 'Phuket ${widget.categories.take(2).join(" & ")} Day';
     _nameCtrl = TextEditingController(text: defaultName);
+
+    _ensureLocationPermission();
+  }
+
+  Future<void> _ensureLocationPermission() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      final granted = permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always;
+
+      if (mounted && granted) {
+        setState(() => _locationPermissionGranted = true);
+      }
+    } catch (e) {
+      // Permission denied or unavailable — blue dot simply won't show
+      print('Location permission error: $e');
+    }
   }
 
   @override
@@ -186,15 +225,13 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     }
   }
 
-  void _saveAndGoToTrips() {
-    final tripId = 'trip_${DateTime.now().millisecondsSinceEpoch}';
+  // ── Shared save logic (no navigation) — called by _ensureTripSaved ──
+  void _persistTrip(String tripId, String tripName) {
     if (!AppStore.isTripFollowed(tripId)) {
       AppStore.followTrip(
         StoredTrip(
           id: tripId,
-          name: _nameCtrl.text.trim().isEmpty
-              ? 'My Phuket Itinerary'
-              : _nameCtrl.text.trim(),
+          name: tripName,
           totalDuration: _totalDuration,
           stops: _orderedPois
               .map((p) => StoredTripStop(
@@ -212,11 +249,63 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
         ),
       );
     }
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const TripsScreen()),
-      (route) => route.isFirst,
-    );
+
+    // Fire-and-forget Firestore write (non-blocking)
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final stops = _orderedPois.map((p) => {
+          'name': p.name,
+          'category': p.category,
+          'distance': p.distance,
+          'stayMinutes': p.stayMinutes,
+          'latitude': p.latitude,
+          'longitude': p.longitude,
+          'imagePath': p.imagePath,
+        }).toList();
+
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('trips')
+            .doc(tripId)
+            .set({
+          'name': tripName,
+          'transport': widget.transport,
+          'totalDuration': _totalDuration,
+          'stops': stops,
+          'date': Timestamp.fromDate(widget.date),
+          'startHour': widget.time.hour,
+          'startMinute': widget.time.minute,
+          'status': 'upcoming',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (_) {}
+  }
+
+  // ── Returns existing saved ID, or saves + returns a new one ──
+  Future<String> _ensureTripSaved() async {
+    if (_savedTripId != null) return _savedTripId!;
+    final tripId = 'trip_${DateTime.now().millisecondsSinceEpoch}';
+    final tripName = _nameCtrl.text.trim().isEmpty
+        ? 'My Phuket Itinerary'
+        : _nameCtrl.text.trim();
+    _savedTripId = tripId;
+    _persistTrip(tripId, tripName);
+    return tripId;
+  }
+
+  // ── Back button: save (if not done yet) then go to Trips ──
+  Future<void> _saveAndGoToTrips() async {
+    await _ensureTripSaved();
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const TripsScreen()),
+        (route) => route.isFirst,
+      );
+    }
   }
 
   // ── [NEW] Start Trip — marks upcoming as inProgress, opens nav ──
@@ -370,8 +459,9 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
                     controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
                   });
                 },
-                myLocationEnabled: true,
-                myLocationButtonEnabled: true,
+                myLocationEnabled: _locationPermissionGranted,
+                myLocationButtonEnabled: _locationPermissionGranted,
+                compassEnabled: true,
                 zoomControlsEnabled: true,
                 mapToolbarEnabled: false,
               ),
@@ -422,13 +512,16 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
 
   String _getApiKey() => 'AIzaSyB0CTGhgMeEQczyD3N1aM6ynx7hY3HO6kw';
 
-  // ── [CHANGED] Edit stops → push new screen7 with POIs pre-checked ──
+  // ── [CHANGED] Edit stops → push new screen7 with POIs, date, time, transport ──
   void _onEditStops() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => GenerateItineraryScreen(
           preSelectedPoiNames: _orderedPois.map((p) => p.name).toList(),
+          preSelectedDate: widget.date,
+          preSelectedTime: widget.time,
+          preSelectedTransport: widget.transport,
         ),
       ),
     );
@@ -1374,15 +1467,19 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
             child: AnimatedBuilder(
               animation: _sheenAnim,
               builder: (_, child) => GestureDetector(
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => NavigationScreen(
-                      tripId: widget.tripId,
-                      selectedPois: _orderedPois,
+                onTap: () async {
+                  final nav = Navigator.of(context);
+                  final id = await _ensureTripSaved();
+                  if (!mounted) return;
+                  nav.push(
+                    MaterialPageRoute(
+                      builder: (_) => NavigationScreen(
+                        tripId: id,
+                        selectedPois: _orderedPois,
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
                 child: Container(
                   height: 52,
                   decoration: BoxDecoration(

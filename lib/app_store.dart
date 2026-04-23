@@ -130,6 +130,9 @@ class StoredTrip {
   final int startHour;
   final int startMinute;
 
+  /// Index of the stop the user last navigated to (persisted via AppStore.setTripProgress).
+  final int currentStopIndex;
+
   const StoredTrip({
     required this.id,
     required this.name,
@@ -140,6 +143,7 @@ class StoredTrip {
     this.transport = 'Walk',
     this.startHour = 9,
     this.startMinute = 0,
+    this.currentStopIndex = 0,
   });
 }
 
@@ -157,6 +161,7 @@ class AppStore {
   static void completeTrip(String tripId) {
     if (tripId.isEmpty) return;
     completedTripIds.add(tripId);
+    inProgressTripIds.remove(tripId);
     _notify();
   }
 
@@ -167,8 +172,19 @@ class AppStore {
   static void startTrip(String id) {
     if (id.isEmpty) return;
     inProgressTripIds.add(id);
+    completedTripIds.remove(id);
     _notify();
   }
+
+  // ── Trip progress (stop index per trip) ───────────────────
+  static final Map<String, int> tripProgress = {};
+
+  static void setTripProgress(String tripId, int stopIndex) {
+    tripProgress[tripId] = stopIndex;
+    _notify();
+  }
+
+  static int getTripProgress(String tripId) => tripProgress[tripId] ?? 0;
 
   // ── Mutable lists ──────────────────────────────────────────
   static final List<SavedVlogSummary> savedVlogs = [];

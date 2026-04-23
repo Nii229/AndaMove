@@ -357,6 +357,10 @@ class _NavigationScreenState extends State<NavigationScreen>
   void initState() {
     super.initState();
 
+    if (widget.tripId != null) {
+      _currentStepIndex = AppStore.getTripProgress(widget.tripId!);
+    }
+
     _sheenCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
@@ -434,6 +438,9 @@ class _NavigationScreenState extends State<NavigationScreen>
   void _onNextStop() {
     if (_currentStepIndex < _steps.length - 1) {
       setState(() => _currentStepIndex++);
+      if (widget.tripId != null) {
+        AppStore.setTripProgress(widget.tripId!, _currentStepIndex);
+      }
       if (_mapController != null && _currentStepIndex < _routeStops.length) {
         _mapController!.animateCamera(
           CameraUpdate.newCameraPosition(CameraPosition(
@@ -472,6 +479,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       builder: (_) => _EndTripSheet(
         onConfirm: () {
           if (widget.tripId != null) {
+            AppStore.setTripProgress(widget.tripId!, 0); // reset for re-run
             AppStore.completeTrip(widget.tripId!);
           }
           Navigator.pushAndRemoveUntil(

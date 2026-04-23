@@ -21,6 +21,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'screen7_generateItinerary.dart';
 import '../app_store.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ══════════════════════════════════════════════════════════════
 // COLOR / RADIUS / SHADOW TOKENS
@@ -226,6 +228,36 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
       longDescription: poi.longDescription,
     ));
     setState(() => _isFav = AppStore.isPoiSaved(poi.name));
+
+    // Sync to Firestore (fire-and-forget)
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final docId = poi.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_').replaceAll(RegExp(r'^_+|_+$'), '');
+      final ref = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedPois')
+          .doc(docId);
+
+      if (_isFav) {
+        ref.set({
+          'name': poi.name,
+          'location': poi.location,
+          'category': poi.category,
+          'rating': poi.rating,
+          'description': poi.description,
+          'openHours': poi.openHours,
+          'estimatedTime': poi.estimatedTime,
+          'priceRange': poi.priceRange,
+          'imagePath': poi.imagePath,
+          'tagLabel': poi.tags.isNotEmpty ? poi.tags.first.label : poi.category,
+          'longDescription': poi.longDescription,
+          'savedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        ref.delete();
+      }
+    }
   }
 
   Future<void> _navigateToPoi() async {
@@ -637,17 +669,137 @@ class SelectItineraryScreen extends StatefulWidget {
 
 class _SelectItineraryScreenState extends State<SelectItineraryScreen> {
   String? _selectedId;
+  List<ItinerarySummary> _firestoreItineraries = [];
+  bool _loading = true;
 
-  // [FIX #2] Only show non-completed itineraries in the picker
-  List<ItinerarySummary> get _pickableItineraries =>
-      _mockItineraries.where((it) => it.statusLabel != 'Completed').toList();
+  @override
+  void initState() {
+    super.initState();
+    _loadTripsFromFirestore();
+  }
+
+  Future<void> _loadTripsFromFirestore() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('trips')
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      final trips = snapshot.docs.map((doc) {
+        final d = doc.data();
+        final stops = (d['stops'] as List<dynamic>? ?? []);
+        final status = d['status'] as String? ?? 'upcoming';
+        final date = (d['date'] as Timestamp?)?.toDate();
+        final transport = d['transport'] as String? ?? 'Walk';
+
+        // Determine status label and color
+        String statusLabel;
+        Color statusFg;
+        if (status == 'completed') {
+          statusLabel = 'Completed';
+          statusFg = const Color(0xFF16A34A);
+        } else if (date != null && date.isAfter(DateTime.now())) {
+          statusLabel = 'Upcoming';
+          statusFg = const Color(0xFF0A7FAB);
+        } else {
+          statusLabel = 'In Progress';
+          statusFg = const Color(0xFFC8912E);
+        }
+
+        // Format date
+        String dateStr = 'Not scheduled';
+        if (date != null) {
+          const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          dateStr = '${days[date.weekday - 1]}, ${date.day} ${months[date.month - 1]} ${date.year}';
+        }
+
+        // Transport icon
+        IconData transportIcon;
+        switch (transport.toLowerCase()) {
+          case 'scooter': transportIcon = Icons.moped_rounded; break;
+          case 'tuk-tuk': transportIcon = Icons.electric_rickshaw_rounded; break;
+          case 'car': transportIcon = Icons.directions_car_rounded; break;
+          case 'walk': transportIcon = Icons.directions_walk_rounded; break;
+          default: transportIcon = Icons.directions_car_rounded;
+        }
+
+        // Cover colors based on status
+        List<Color> coverColors;
+        if (status == 'completed') {
+          coverColors = const [Color(0xFF16A34A), Color(0xFF4ADE80)];
+        } else if (statusLabel == 'Upcoming') {
+          coverColors = const [Color(0xFF0A7FAB), Color(0xFF1AAECF)];
+        } else {
+          coverColors = const [Color(0xFFC8912E), Color(0xFFF0C060)];
+        }
+
+        return ItinerarySummary(
+          id: doc.id,
+          name: d['name'] as String? ?? 'Untitled Trip',
+          date: dateStr,
+          destination: 'Phuket',
+          stopCount: stops.length,
+          transportLabel: transport,
+          transportIcon: transportIcon,
+          coverColors: coverColors,
+          statusLabel: statusLabel,
+          statusFg: statusFg,
+        );
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _firestoreItineraries = trips;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  List<ItinerarySummary> get _pickableItineraries {
+    final source = _firestoreItineraries.isNotEmpty ? _firestoreItineraries : _mockItineraries;
+    return source.where((it) => it.statusLabel != 'Completed').toList();
+  }
 
   void _confirm() {
     if (_selectedId == null) return;
-    final chosen = _mockItineraries.firstWhere((it) => it.id == _selectedId);
+    final source = _firestoreItineraries.isNotEmpty ? _firestoreItineraries : _mockItineraries;
+    final chosen = source.firstWhere((it) => it.id == _selectedId);
 
     // [FIX #1] Persist the added POI so screen11 can reflect the updated count
     AppStore.addPoiToTrip(_selectedId!, widget.poi.name);
+
+    // Also update Firestore trip (fire-and-forget)
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && _selectedId != null) {
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('trips')
+          .doc(_selectedId!)
+          .update({
+        'stops': FieldValue.arrayUnion([{
+          'name': widget.poi.name,
+          'category': widget.poi.category,
+          'distance': '',
+          'stayMinutes': 60,
+          'latitude': widget.poi.latitude,
+          'longitude': widget.poi.longitude,
+          'imagePath': widget.poi.imagePath,
+        }]),
+      });
+    }
 
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -689,13 +841,15 @@ class _SelectItineraryScreenState extends State<SelectItineraryScreen> {
                 style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w700, color: _C.oceanDeep)),
           ),
         ])),
-        Expanded(child: list.isEmpty
-            ? _buildEmpty()
-            : ListView.builder(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                itemCount: list.length,
-                itemBuilder: (_, i) => _buildItineraryCard(list[i]),
-              )),
+        Expanded(child: _loading
+            ? const Center(child: CircularProgressIndicator(color: _C.oceanDeep, strokeWidth: 3))
+            : list.isEmpty
+                ? _buildEmpty()
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                    itemCount: list.length,
+                    itemBuilder: (_, i) => _buildItineraryCard(list[i]),
+                  )),
       ]),
       bottomNavigationBar: Container(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),

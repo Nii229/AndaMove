@@ -153,6 +153,41 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
+  int _firestoreTripCount = 0;
+  int _firestorePlacesCount = 0;
+  bool _statsLoaded = false;
+
+  Future<void> _loadStats() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      // Count trips from Firestore
+      final tripsSnapshot = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('trips')
+          .get();
+
+      // Count saved POIs from Firestore
+      final savedSnapshot = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedPois')
+          .get();
+
+      if (mounted) {
+        setState(() {
+          _firestoreTripCount = tripsSnapshot.docs.length;
+          _firestorePlacesCount = savedSnapshot.docs.length;
+          _statsLoaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _statsLoaded = true);
+    }
+  }
+
   late final AnimationController _sheenCtrl;
   late final Animation<double> _sheenAnim;
 
@@ -178,6 +213,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     ).animate(CurvedAnimation(parent: _sheenCtrl, curve: Curves.easeInOut));
     AppStore.addListener(_onStoreUpdate);
     _loadUserData();
+    _loadStats();
   }
 
   @override
@@ -502,16 +538,13 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildStatsStripInline() {
-    final tripCount = 3 + AppStore.followedTrips.length;
-    final placesCount = AppStore.savedPois.length;
-    const covered = '86 km';
-    const avgRating = '4.9';
+    final tripCount = _statsLoaded ? _firestoreTripCount : (3 + AppStore.followedTrips.length);
+    final visitedCount = _statsLoaded ? _firestorePlacesCount : AppStore.savedPois.length;
 
     final stats = [
       (tripCount.toString(), 'Trips'),
-      (placesCount.toString(), 'Places'),
-      (covered, 'Covered'),
-      (avgRating, 'Avg Rating'),
+      (visitedCount.toString(), 'Visited'),
+      ('—', 'Distance'),
     ];
 
     return GestureDetector(

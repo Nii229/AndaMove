@@ -305,11 +305,106 @@ class _HomeScreenState extends State<HomeScreen>
     return _PoiTag(tag, c.$1, c.$2);
   }
 
+  static (Color, Color) _getTagColors(String tag) {
+    switch (tag.toLowerCase()) {
+      case 'beach': case 'popular': case 'must see': case 'must do':
+      case 'hidden gem': case 'scenic': case 'viewpoint': case 'indoor':
+        return (const Color(0xFFEAF8FD), const Color(0xFF0A7FAB));
+      case 'nature': case 'peaceful': case 'wildlife': case 'outdoor':
+      case 'family': case 'ethical':
+        return (const Color(0xFFEEF5EE), const Color(0xFF16A34A));
+      case 'culture': case 'temple': case 'upscale': case 'heritage':
+      case 'sunset': case 'fine dining': case 'luxury':
+        return (const Color(0xFFFDF5E7), const Color(0xFFC8912E));
+      case 'food': case 'seafood': case 'nightlife': case 'adventure':
+      case 'shopping': case 'club': case 'thrill':
+        return (const Color(0xFFFDF0EE), const Color(0xFFE8634C));
+      default:
+        return (const Color(0xFFEAF8FD), const Color(0xFF0A7FAB));
+    }
+  }
+
+  Future<void> _loadSavedPoisFromFirestore() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedPois')
+          .get();
+
+      // Clear existing AppStore saved POIs and reload from Firestore
+      AppStore.savedPois.clear();
+
+      for (final doc in snapshot.docs) {
+        final d = doc.data();
+        final category = d['category'] as String? ?? '';
+
+        IconData icon;
+        switch (category.toLowerCase()) {
+          case 'beach': icon = Icons.beach_access_rounded; break;
+          case 'temple': icon = Icons.temple_buddhist_rounded; break;
+          case 'nature': icon = Icons.forest_rounded; break;
+          case 'culture': icon = Icons.account_balance_rounded; break;
+          case 'food': icon = Icons.restaurant_rounded; break;
+          case 'adventure': icon = Icons.surfing_rounded; break;
+          case 'nightlife': icon = Icons.nightlife_rounded; break;
+          case 'heritage': icon = Icons.location_city_rounded; break;
+          case 'viewpoint': icon = Icons.landscape_rounded; break;
+          case 'attraction': icon = Icons.attractions_rounded; break;
+          case 'shopping': icon = Icons.shopping_bag_rounded; break;
+          default: icon = Icons.place_rounded;
+        }
+
+        List<Color> gradColors;
+        switch (category.toLowerCase()) {
+          case 'beach': gradColors = const [Color(0xFF0A7FAB), Color(0xFF38BDF8), Color(0xFF93C5FD)]; break;
+          case 'temple': gradColors = const [Color(0xFFFBBF24), Color(0xFFF59E0B), Color(0xFFFDE68A)]; break;
+          case 'nature': gradColors = const [Color(0xFF16A34A), Color(0xFF22C55E), Color(0xFF86EFAC)]; break;
+          case 'culture': gradColors = const [Color(0xFF7C3AED), Color(0xFFA855F7), Color(0xFFE9D5FF)]; break;
+          case 'food': gradColors = const [Color(0xFFE8634C), Color(0xFFF97316), Color(0xFFFED7AA)]; break;
+          case 'adventure': gradColors = const [Color(0xFF166534), Color(0xFF16A34A), Color(0xFF86EFAC)]; break;
+          case 'nightlife': gradColors = const [Color(0xFF7C3AED), Color(0xFFDB2777), Color(0xFFF472B6)]; break;
+          case 'heritage': gradColors = const [Color(0xFF92400E), Color(0xFFB45309), Color(0xFFFDE68A)]; break;
+          case 'viewpoint': gradColors = const [Color(0xFFF59E0B), Color(0xFFF97316), Color(0xFFFB7185)]; break;
+          case 'attraction': gradColors = const [Color(0xFF06B6D4), Color(0xFF0891B2), Color(0xFF67E8F9)]; break;
+          case 'shopping': gradColors = const [Color(0xFF475569), Color(0xFF64748B), Color(0xFFCBD5E1)]; break;
+          default: gradColors = const [Color(0xFF0A7FAB), Color(0xFF1AAECF), Color(0xFF7DD8EF)];
+        }
+
+        final (tagBg, tagFg) = _getTagColors(d['tagLabel'] as String? ?? category);
+
+        AppStore.savedPois.add(SavedPoiSummary(
+          name: d['name'] as String? ?? '',
+          location: d['location'] as String? ?? '',
+          category: category,
+          rating: (d['rating'] as num?)?.toDouble() ?? 0.0,
+          description: d['description'] as String? ?? '',
+          openHours: d['openHours'] as String? ?? '',
+          estimatedTime: d['estimatedTime'] as String? ?? '',
+          priceRange: d['priceRange'] as String? ?? 'Free',
+          gradientColors: gradColors,
+          icon: icon,
+          tagLabel: d['tagLabel'] as String? ?? category,
+          tagBg: tagBg,
+          tagFg: tagFg,
+          imagePath: d['imagePath'] as String? ?? '',
+          longDescription: d['longDescription'] as String? ?? '',
+        ));
+      }
+
+      if (mounted) setState(() {});
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
     _weatherFuture = _WeatherStat.fetch();
     _loadPoisFromFirestore();
+    _loadSavedPoisFromFirestore();
     AppStore.addListener(_onStoreUpdate);
   }
 
@@ -2424,25 +2519,57 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Toggle POI favourite via AppStore ─────────────────────
   void _togglePoiFav(_PoiCard card) {
-    AppStore.togglePoi(
-      SavedPoiSummary(
-        name: card.name,
-        location: card.location,
-        category: card.category,
-        rating: card.rating,
-        description: card.description,
-        openHours: card.openHours,
-        estimatedTime: card.estimatedTime,
-        priceRange: card.priceRange,
-        gradientColors: card.gradientColors,
-        icon: card.placeholderIcon,
-        tagLabel: card.tags.isNotEmpty ? card.tags.first.label : card.category,
-        tagBg: card.tags.isNotEmpty ? card.tags.first.bg : AppColors.oceanTint,
-        tagFg: card.tags.isNotEmpty ? card.tags.first.fg : AppColors.oceanDeep,
-        imagePath: card.imagePath,
-        longDescription: card.longDescription,
-      ),
+    final poi = SavedPoiSummary(
+      name: card.name,
+      location: card.location,
+      category: card.category,
+      rating: card.rating,
+      description: card.description,
+      openHours: card.openHours,
+      estimatedTime: card.estimatedTime,
+      priceRange: card.priceRange,
+      gradientColors: card.gradientColors,
+      icon: card.placeholderIcon,
+      tagLabel: card.tags.isNotEmpty ? card.tags.first.label : card.category,
+      tagBg: card.tags.isNotEmpty ? card.tags.first.bg : const Color(0xFFEAF8FD),
+      tagFg: card.tags.isNotEmpty ? card.tags.first.fg : const Color(0xFF0A7FAB),
+      imagePath: card.imagePath,
+      longDescription: card.longDescription,
     );
+
+    AppStore.togglePoi(poi);
+
+    // Sync to Firestore (fire-and-forget)
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final docId = card.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_').replaceAll(RegExp(r'^_+|_+$'), '');
+      final ref = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedPois')
+          .doc(docId);
+
+      if (AppStore.isPoiSaved(card.name)) {
+        // Just saved — add to Firestore
+        ref.set({
+          'name': card.name,
+          'location': card.location,
+          'category': card.category,
+          'rating': card.rating,
+          'description': card.description,
+          'openHours': card.openHours,
+          'estimatedTime': card.estimatedTime,
+          'priceRange': card.priceRange,
+          'imagePath': card.imagePath,
+          'tagLabel': card.tags.isNotEmpty ? card.tags.first.label : card.category,
+          'longDescription': card.longDescription,
+          'savedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Just unsaved — remove from Firestore
+        ref.delete();
+      }
+    }
   }
 
   // ── Navigation helper ────────────────────────────────────
