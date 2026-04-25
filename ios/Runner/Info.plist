@@ -49,6 +49,10 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>AndaMove needs your location to show nearby attractions and calculate travel times.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>AndaMove needs access to your photo library to upload images.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>AndaMove needs camera access to take photos.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

@@ -237,6 +237,30 @@ late final PageController _pageCtrl;  int    _currentPage  = 0;
     _stories = List.from(seedStories);
     // Sync isSaved from store on entry
     for (final s in _stories) { s.isSaved = AppStore.isVlogSaved(s.id); }
+    // Load persisted saves from Firestore (fire-and-forget)
+    AppStore.loadSavedVlogsFromFirestore(
+      _stories.map((s) => SavedVlogSummary(
+        id: s.id,
+        title: s.title,
+        location: s.location,
+        creatorName: s.creatorName,
+        creatorInitials: s.creatorInitials,
+        creatorAvatarColor: s.creatorAvatarColor,
+        totalDuration: s.totalDuration,
+        stopCount: s.stopCount,
+        tags: s.tags,
+        thumbColors: _sceneThumbColors(s.scene),
+        storyIndex: _stories.indexWhere((st) => st.id == s.id),
+      )).toList(),
+    ).then((_) {
+      if (mounted) {
+        setState(() {
+          for (final s in _stories) {
+            s.isSaved = AppStore.isVlogSaved(s.id);
+          }
+        });
+      }
+    });
     _currentPage = widget.initialPage.clamp(0, _stories.length - 1);
     _pageCtrl = PageController(initialPage: _currentPage);
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);

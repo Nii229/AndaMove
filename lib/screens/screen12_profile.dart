@@ -21,10 +21,13 @@
 //   8. Sign Out → screen2_login (pushAndRemoveUntil)
 // ============================================================
 
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import '../app_store.dart';
 import 'screen14_explore.dart';
 import 'screen6_POI.dart';
@@ -115,6 +118,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   Map<String, dynamic>? _userData;
+  String? _profilePhotoUrl;
+  bool _uploadingPhoto = false;
 
   // Country code to display name mapping
   static const _countryNames = {
@@ -147,7 +152,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       try {
         final doc = await _firestore.collection('users').doc(user.uid).get();
         if (doc.exists && mounted) {
-          setState(() => _userData = doc.data());
+          setState(() {
+            _userData = doc.data();
+            _profilePhotoUrl = _userData?['photoUrl'] as String?;
+          });
         }
       } catch (_) {}
     }
@@ -155,7 +163,18 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   int _firestoreTripCount = 0;
   int _firestorePlacesCount = 0;
+  int _firestoreVlogCount = 0;
   bool _statsLoaded = false;
+
+  List<Color> _sceneThumbColors(StoryScene scene) {
+    switch (scene) {
+      case StoryScene.beach:  return [const Color(0xFF1A6B9A), const Color(0xFF38BED6)];
+      case StoryScene.temple: return [const Color(0xFF0D2B3E), const Color(0xFF2E86AB)];
+      case StoryScene.jungle: return [const Color(0xFF2C5F3A), const Color(0xFF1A3D22)];
+      case StoryScene.sunset: return [const Color(0xFF6B1F4E), const Color(0xFFD45F1A)];
+      case StoryScene.market: return [const Color(0xFF1A100A), const Color(0xFF2A1505)];
+    }
+  }
 
   Future<void> _loadStats() async {
     try {
@@ -176,10 +195,35 @@ class _ProfileScreenState extends State<ProfileScreen>
           .collection('savedPois')
           .get();
 
+      // Count saved vlogs from Firestore
+      final savedVlogsSnapshot = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedVlogs')
+          .get();
+
+      // Populate AppStore saved vlogs list from Firestore (fire-and-forget)
+      AppStore.loadSavedVlogsFromFirestore(
+        seedStories.map((s) => SavedVlogSummary(
+          id: s.id,
+          title: s.title,
+          location: s.location,
+          creatorName: s.creatorName,
+          creatorInitials: s.creatorInitials,
+          creatorAvatarColor: s.creatorAvatarColor,
+          totalDuration: s.totalDuration,
+          stopCount: s.stopCount,
+          tags: s.tags,
+          thumbColors: _sceneThumbColors(s.scene),
+          storyIndex: seedStories.indexOf(s),
+        )).toList(),
+      );
+
       if (mounted) {
         setState(() {
           _firestoreTripCount = tripsSnapshot.docs.length;
           _firestorePlacesCount = savedSnapshot.docs.length;
+          _firestoreVlogCount = savedVlogsSnapshot.docs.length;
           _statsLoaded = true;
         });
       }
@@ -399,6 +443,62 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  Future<void> _pickAndUploadProfilePhoto() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 100,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _uploadingPhoto = true);
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final file = File(picked.path);
+      final ext = picked.path.split('.').last.toLowerCase();
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('profile_photos')
+          .child('${user.uid}.$ext');
+
+      await ref.putFile(file);
+      final url = await ref.getDownloadURL();
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({'photoUrl': url});
+
+      await user.updatePhotoURL(url);
+
+      if (mounted) {
+        setState(() {
+          _profilePhotoUrl = url;
+          _uploadingPhoto = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _uploadingPhoto = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed. Please try again.',
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.w600, color: Colors.white)),
+            backgroundColor: AppColors.coral,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildAvatarRow() {
     final user = FirebaseAuth.instance.currentUser;
     final displayName = _userData?['name'] ?? user?.displayName ?? 'Explorer';
@@ -407,46 +507,72 @@ class _ProfileScreenState extends State<ProfileScreen>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Avatar with verified badge
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.oceanDeep, AppColors.oceanMid],
-                ),
-                border: Border.all(color: AppColors.gold, width: 3),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.gold.withOpacity(0.30),
-                    blurRadius: 20,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.person_rounded, size: 36, color: Colors.white),
-            ),
-            Positioned(
-              bottom: -2,
-              right: -2,
-              child: Container(
-                width: 22,
-                height: 22,
+        // Avatar with camera badge (tap to upload)
+        GestureDetector(
+          onTap: _pickAndUploadProfilePhoto,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: AppColors.gold,
-                  border: Border.all(color: const Color(0xFF061018), width: 2),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.oceanDeep, AppColors.oceanMid],
+                  ),
+                  border: Border.all(color: AppColors.gold, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.gold.withOpacity(0.30),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                child: const Icon(Icons.verified_rounded, size: 12, color: Colors.white),
+                child: ClipOval(
+                  child: _uploadingPhoto
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5, color: Colors.white))
+                      : _profilePhotoUrl != null
+                          ? Image.network(
+                              _profilePhotoUrl!,
+                              fit: BoxFit.cover,
+                              width: 72,
+                              height: 72,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.person_rounded,
+                                size: 36, color: Colors.white),
+                            )
+                          : const Icon(
+                              Icons.person_rounded,
+                              size: 36, color: Colors.white),
+                ),
               ),
-            ),
-          ],
+              Positioned(
+                bottom: -2,
+                right: -2,
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _uploadingPhoto
+                        ? AppColors.gold.withOpacity(0.50)
+                        : AppColors.gold,
+                    border: Border.all(
+                      color: const Color(0xFF061018), width: 2),
+                  ),
+                  child: const Icon(
+                    Icons.camera_alt_rounded,
+                    size: 11, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(width: 14),
         // Name, email, badge
@@ -631,9 +757,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                   iconBg: AppColors.oceanTint,
                   iconColor: AppColors.oceanDeep,
                   title: 'Saved Videos',
-                  countLabel: vlogs.isEmpty
+                  countLabel: AppStore.savedVlogs.isEmpty && _firestoreVlogCount == 0
                       ? 'Bookmark vlogs from Explore'
-                      : '${vlogs.length} saved',
+                      : '${AppStore.savedVlogs.length} saved',
                   child: vlogs.isEmpty
                       ? _emptyHint('No saved videos yet')
                       : SizedBox(

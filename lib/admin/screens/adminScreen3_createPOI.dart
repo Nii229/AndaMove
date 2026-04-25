@@ -12,8 +12,11 @@
 //   • Mini map preview (CustomPainter)
 // ============================================================
 
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../admin_theme.dart';
 import '../../app_store.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -93,6 +96,10 @@ class _AdminCreatePoiScreenState
   String _estimatedTime    = '1 - 2 hours';
   bool _isPublishing       = false;
 
+  File?   _selectedImage;
+  String? _uploadedImageUrl;
+  bool    _uploadingImage = false;
+
   final _transportTags = [
     _TransportTag(Icons.electric_scooter_rounded, 'Scooter', selected: true),
     _TransportTag(Icons.directions_car_rounded,   'Car',     selected: true),
@@ -114,6 +121,33 @@ class _AdminCreatePoiScreenState
     _weekendFromCtrl.dispose();
     _weekendToCtrl.dispose();
     super.dispose();
+  }
+
+  // ── Pick & upload POI image ───────────────────────────────
+  Future<void> _pickPoiImage() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+    setState(() {
+      _selectedImage   = File(picked.path);
+      _uploadingImage  = true;
+    });
+    try {
+      final ext = picked.path.split('.').last;
+      final docId = _nameCtrl.text.trim().toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('poi_images/${docId}_${DateTime.now().millisecondsSinceEpoch}.$ext');
+      await ref.putFile(_selectedImage!);
+      final url = await ref.getDownloadURL();
+      if (mounted) setState(() { _uploadedImageUrl = url; _uploadingImage = false; });
+    } catch (_) {
+      if (mounted) setState(() => _uploadingImage = false);
+    }
   }
 
   // ── Publish handler ───────────────────────────────────────
@@ -162,7 +196,7 @@ class _AdminCreatePoiScreenState
         'openHours': hours,
         'estimatedTime': _estimatedTime,
         'priceRange': _selectedPrice,
-        'imagePath': '',
+        'imagePath': _uploadedImageUrl ?? '',
         'tags': [_selectedCategory],
         'status': 'active',
         'createdAt': FieldValue.serverTimestamp(),
@@ -193,7 +227,7 @@ class _AdminCreatePoiScreenState
         tagLabel: _selectedCategory,
         tagBg: tagBg,
         tagFg: tagFg,
-        imagePath: '',
+        imagePath: _uploadedImageUrl ?? '',
       ));
 
       if (mounted) {
@@ -600,31 +634,73 @@ class _AdminCreatePoiScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Upload zone
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            decoration: BoxDecoration(
-              color: AC.surface2,
-              borderRadius: BorderRadius.circular(AR.md),
-              border: Border.all(color: AC.border, width: 1.5),
-            ),
-            child: Column(
-              children: [
-                Icon(Icons.cloud_upload_rounded,
-                    size: 28, color: AC.text3),
-                const SizedBox(height: 8),
-                Text('Tap to upload photos',
-                    style: adminUi(size: 13, color: AC.text2)),
-                const SizedBox(height: 3),
-                Text('JPG, PNG · Max 5MB each',
-                    style: adminUi(size: 11, color: AC.text3)),
-                const SizedBox(height: 8),
-                Text(
-                  'Photo upload will be available with Firebase Storage',
-                  style: adminUi(size: 10, color: AC.text3)
-                      .copyWith(fontStyle: FontStyle.italic),
+          GestureDetector(
+            onTap: _uploadingImage ? null : _pickPoiImage,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              decoration: BoxDecoration(
+                color: _selectedImage != null
+                    ? AC.oceanTint
+                    : AC.surface2,
+                borderRadius: BorderRadius.circular(AR.md),
+                border: Border.all(
+                  color: _selectedImage != null
+                      ? AC.ocean.withValues(alpha: 0.40)
+                      : AC.border,
+                  width: 1.5,
                 ),
-              ],
+              ),
+              child: _uploadingImage
+                  ? const Center(
+                      child: SizedBox(
+                        width: 24, height: 24,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AC.ocean),
+                      ),
+                    )
+                  : _selectedImage != null
+                      ? Column(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(AR.sm),
+                              child: Image.file(
+                                _selectedImage!,
+                                height: 120,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.check_circle_rounded,
+                                    size: 14, color: AC.ocean),
+                                const SizedBox(width: 5),
+                                Text(
+                                  _uploadedImageUrl != null
+                                      ? 'Uploaded · tap to change'
+                                      : 'Selected · tap to change',
+                                  style: adminUi(size: 12, color: AC.ocean),
+                                ),
+                              ],
+                            ),
+                          ],
+                        )
+                      : Column(
+                          children: [
+                            Icon(Icons.cloud_upload_rounded,
+                                size: 28, color: AC.text3),
+                            const SizedBox(height: 8),
+                            Text('Tap to upload photo',
+                                style: adminUi(size: 13, color: AC.text2)),
+                            const SizedBox(height: 3),
+                            Text('JPG, PNG · Max 5MB',
+                                style: adminUi(size: 11, color: AC.text3)),
+                          ],
+                        ),
             ),
           ),
         ],
@@ -765,7 +841,7 @@ class _AdminCreatePoiScreenState
           // Publish button
           Expanded(
             child: GestureDetector(
-              onTap: _isPublishing ? null : _handlePublish,
+              onTap: (_isPublishing || _uploadingImage) ? null : _handlePublish,
               child: Container(
                 height: 46,
                 decoration: BoxDecoration(

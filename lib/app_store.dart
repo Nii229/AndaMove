@@ -18,6 +18,8 @@
 // ============================================================
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ══════════════════════════════════════════════════════════════
 // SAVED VLOG SUMMARY
@@ -308,6 +310,44 @@ class AppStore {
       savedVlogs.add(vlog);
     }
     _notify();
+    _syncVlogToFirestore(vlog.id, isVlogSaved(vlog.id));
+  }
+
+  static void _syncVlogToFirestore(String vlogId, bool isSaved) {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final ref = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedVlogs')
+          .doc(vlogId);
+      if (isSaved) {
+        ref.set({'savedAt': FieldValue.serverTimestamp()});
+      } else {
+        ref.delete();
+      }
+    } catch (_) {}
+  }
+
+  static Future<void> loadSavedVlogsFromFirestore(
+      List<SavedVlogSummary> allVlogs) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedVlogs')
+          .get();
+      final savedIds = snap.docs.map((d) => d.id).toSet();
+      final existing = savedVlogs.where((v) => !savedIds.contains(v.id)).toList();
+      final fromFirestore = allVlogs.where((v) => savedIds.contains(v.id)).toList();
+      savedVlogs
+        ..clear()
+        ..addAll([...fromFirestore, ...existing]);
+      _notify();
+    } catch (_) {}
   }
 
   // ══════════════════════════════════════════════════════════

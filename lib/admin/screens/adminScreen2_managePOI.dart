@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../admin_theme.dart';
 import 'adminScreen3_createPOI.dart';
+import 'adminScreen3b_editPOI.dart';
 import '../../screens/screen6_POI.dart';
 import '../../app_store.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -29,7 +30,16 @@ class _AdminPoi {
   final String? viewsText;
   final String? firestoreDocId;
   final PoiStatus? firestoreStatus;
-  const _AdminPoi({required this.poi, this.viewsText, this.firestoreDocId, this.firestoreStatus});
+  final double latitude;
+  final double longitude;
+  const _AdminPoi({
+    required this.poi,
+    this.viewsText,
+    this.firestoreDocId,
+    this.firestoreStatus,
+    this.latitude = 0.0,
+    this.longitude = 0.0,
+  });
 
   PoiStatus get status {
     if (firestoreStatus != null) return firestoreStatus!;
@@ -701,6 +711,8 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
           viewsText: '${rating.toStringAsFixed(1)} · ${d['createdBy'] == 'admin' ? 'Admin' : 'Seed'}',
           firestoreDocId: doc.id,
           firestoreStatus: poiStatus,
+          latitude: (d['latitude'] as num?)?.toDouble() ?? 0.0,
+          longitude: (d['longitude'] as num?)?.toDouble() ?? 0.0,
         );
       }).toList();
 
@@ -1262,7 +1274,7 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
             Icons.edit_rounded,
             'Edit',
             AC.ocean,
-            () => _snack('Edit "$n" — coming with Firebase'),
+            () => _openEditScreen(ap),
           ),
           (
             Icons.visibility_off_rounded,
@@ -1285,7 +1297,7 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
             Icons.edit_rounded,
             'Edit',
             AC.ocean,
-            () => _snack('Edit "$n" — coming with Firebase'),
+            () => _openEditScreen(ap),
           ),
           (
             Icons.visibility_rounded,
@@ -1321,7 +1333,7 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
             Icons.edit_rounded,
             'Edit',
             AC.ocean,
-            () => _snack('Edit "$n" — coming with Firebase'),
+            () => _openEditScreen(ap),
           ),
           (
             Icons.close_rounded,
@@ -1368,6 +1380,51 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
         }).toList(),
       ),
     );
+  }
+
+  void _openEditScreen(_AdminPoi ap) async {
+    final poi = ap.poi;
+
+    List<String> transportAccess = [];
+    if (ap.firestoreDocId != null) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('pois')
+            .doc(ap.firestoreDocId)
+            .get();
+        if (doc.exists) {
+          transportAccess = List<String>.from(
+              doc.data()?['transportAccess'] as List? ?? []);
+        }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminEditPoiScreen(
+          firestoreDocId: ap.firestoreDocId,
+          initialName: poi.name,
+          initialDescription: poi.description,
+          initialLongDescription: poi.longDescription,
+          initialCategory: poi.category,
+          initialLocation: poi.location,
+          initialPriceRange: poi.priceRange,
+          initialEstimatedTime: poi.estimatedTime,
+          initialOpenHours: poi.openHours,
+          initialLatitude: ap.latitude,
+          initialLongitude: ap.longitude,
+          initialTransportAccess: transportAccess,
+          initialImagePath: ap.poi.imagePath,
+        ),
+      ),
+    );
+
+    if (saved == true) {
+      _loadPois();
+    }
   }
 
   void _confirmDelete(_AdminPoi ap, {bool reject = false}) {
