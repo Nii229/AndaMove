@@ -229,6 +229,11 @@ class _AdminCreatePoiScreenState
         tagFg: tagFg,
         imagePath: _uploadedImageUrl ?? '',
       ));
+      AppStore.logActivity(
+        category: 'poi',
+        title: 'New POI published',
+        sub: '$name · $_selectedCategory',
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

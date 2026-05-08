@@ -1,26 +1,20 @@
 // ============================================================
-// AndaMove Admin — Screen 6: Admin Profile
-// File: lib/admin/screens/admin_profile_screen.dart
+// AndaMove Admin — Screen 5: Admin Profile
+// File: lib/admin/screens/adminScreen5_profile.dart
 //
-// NEW patterns introduced in this screen:
-//   1. Navy hero with gradient avatar + role chip overlay
-//   2. Info row — 32×32 tinted icon + label + value (right-aligned)
-//      Used in Account Details section
-//   3. DM Mono admin ID inline with other non-mono rows
-//   4. Permissions grid — Wrap of tinted tag chips, 3 colours:
-//        green (granted), ocean (limited), coral (denied ✕)
-//   5. Console toggle row — icon + title+sub + toggle widget
-//      Toggle uses AnimatedContainer (pill) + AnimatedAlign (dot)
-//      — same pattern as tourist Profile but in admin style
-//   6. Admin action log — 6px dot + text + DM Mono time
-//      Log dots use status colours (green/coral/amber/ocean)
-//   7. Coral sign-out button — full width, r-xl, centred row
-//   8. Version footer — RichText: "Fatini" in oceanMid bold
-//      (same pattern as tourist Profile screen)
+// UPDATED — Firestore-wired:
+//   • Account Details reads from Firebase Auth + Firestore
+//     users/{uid} (name, email) — falls back to hardcoded if
+//     the logged-in user has no Firestore doc
+//   • Recent Admin Actions reads last 4 entries from
+//     activityLogs collection (same source as screen6)
+//   • Everything else unchanged: permissions grid, toggles,
+//     sign-out button, version footer
 // ============================================================
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../admin_theme.dart';
 import '../../screens/screen2_login.dart';
 
@@ -31,13 +25,8 @@ class _InfoRow {
   final String label;
   final String value;
   final bool mono;
-  const _InfoRow(
-    this.icon,
-    this.iconColor,
-    this.label,
-    this.value, {
-    this.mono = false,
-  });
+  const _InfoRow(this.icon, this.iconColor, this.label, this.value,
+      {this.mono = false});
 }
 
 class _PermTag {
@@ -54,23 +43,53 @@ class _ToggleRow {
   final String title;
   final String sub;
   bool on;
-  _ToggleRow(
-    this.icon,
-    this.iconColor,
-    this.title,
-    this.sub, {
-    required this.on,
-  });
+  _ToggleRow(this.icon, this.iconColor, this.title, this.sub,
+      {required this.on});
 }
 
-class _LogRow {
+class _LiveLogRow {
   final Color dot;
   final String text;
-  final String time;
-  const _LogRow(this.dot, this.text, this.time);
+  final DateTime? timestamp;
+
+  const _LiveLogRow({required this.dot, required this.text, this.timestamp});
+
+  String get timeLabel {
+    if (timestamp == null) return '—';
+    final diff = DateTime.now().difference(timestamp!);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inHours < 1)   return '${diff.inMinutes}m ago';
+    if (diff.inDays < 1)    return '${diff.inHours}h ago';
+    if (diff.inDays < 30)   return '${diff.inDays}d ago';
+    return '${diff.inDays ~/ 30}mo ago';
+  }
+
+  static Color _dotFor(String cat) {
+    switch (cat) {
+      case 'user':   return AC.green;
+      case 'poi':    return AC.gold;
+      case 'trip':   return AC.ocean;
+      default:       return AC.purple;
+    }
+  }
+
+  factory _LiveLogRow.fromDoc(
+      QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final d   = doc.data();
+    final cat = (d['category'] as String?)?.toLowerCase() ?? 'system';
+    final title = d['title'] as String? ?? '—';
+    final sub   = d['sub']   as String? ?? '';
+    return _LiveLogRow(
+      dot:       _dotFor(cat),
+      text:      sub.isNotEmpty ? '$title · $sub' : title,
+      timestamp: (d['createdAt'] as Timestamp?)?.toDate(),
+    );
+  }
 }
 
-// ── Main screen ───────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// MAIN SCREEN
+// ══════════════════════════════════════════════════════════════
 class AdminProfileScreen extends StatefulWidget {
   const AdminProfileScreen({super.key});
   @override
@@ -78,99 +97,160 @@ class AdminProfileScreen extends StatefulWidget {
 }
 
 class _AdminProfileScreenState extends State<AdminProfileScreen> {
-  // Account detail rows
-  static final _accountRows = [
-    _InfoRow(
-      Icons.person_rounded,
-      AC.ocean,
-      'Full Name',
-      'Nur Fatini bt. Mahamad Razali',
-    ),
-    _InfoRow(Icons.mail_rounded, AC.gold, 'Email', 'fatini@andamove.com'),
-    _InfoRow(
-      Icons.badge_rounded,
-      AC.purple,
-      'Admin ID',
-      'ADMIN-0042',
-      mono: true,
-    ),
-    _InfoRow(Icons.calendar_today_rounded, AC.green, 'Since', '4 August 2025'),
-  ];
 
-  // Permission tags
-  // CSS: green = granted, ocean = limited, coral = denied
-  // Icon: check (green/ocean) or close (coral)
+  // ── Account data ──────────────────────────────────────────────
+  String _displayName   = 'Nur Fatini';
+  String _email         = 'fatini@andamove.com';
+  String _adminId       = 'ADMIN-0042';
+  String _memberSince   = '4 August 2025';
+  bool   _accountLoaded = false;
+
+  // ── Recent actions ────────────────────────────────────────────
+  List<_LiveLogRow> _recentLogs  = [];
+  bool              _logsLoaded  = false;
+
+  // ── Permissions (static — role-based access is out of FYP scope)
   static final _perms = [
-    _PermTag('Manage POIs', AC.greenTint, AC.green, Icons.check_rounded),
-    _PermTag('Manage Users', AC.greenTint, AC.green, Icons.check_rounded),
-    _PermTag('View Analytics', AC.greenTint, AC.green, Icons.check_rounded),
-    _PermTag('Ban Users', AC.greenTint, AC.green, Icons.check_rounded),
-    _PermTag('Export Data', AC.oceanTint, AC.ocean, Icons.check_rounded),
-    _PermTag('Billing', AC.coralTint, AC.coral, Icons.close_rounded),
+    _PermTag('Manage POIs',    AC.greenTint,  AC.green,  Icons.check_rounded),
+    _PermTag('Manage Users',   AC.greenTint,  AC.green,  Icons.check_rounded),
+    _PermTag('View Analytics', AC.greenTint,  AC.green,  Icons.check_rounded),
+    _PermTag('Ban Users',      AC.greenTint,  AC.green,  Icons.check_rounded),
+    _PermTag('Export Data',    AC.oceanTint,  AC.ocean,  Icons.check_rounded),
+    _PermTag('Billing',        AC.coralTint,  AC.coral,  Icons.close_rounded),
   ];
 
-  // Toggle rows (mutable because toggling changes state)
+  // ── Console toggles ───────────────────────────────────────────
   final _toggles = [
-    _ToggleRow(
-      Icons.notifications_rounded,
-      AC.ocean,
-      'Alert Notifications',
-      'New users, flagged reports, POI submissions',
-      on: true,
-    ),
-    _ToggleRow(
-      Icons.shield_rounded,
-      AC.purple,
-      '2FA Authentication',
-      'Required on every login',
-      on: true,
-    ),
-    _ToggleRow(
-      Icons.schedule_rounded,
-      AC.gold,
-      'Session Timeout',
-      'Auto-logout after 30 minutes',
-      on: true,
-    ),
+    _ToggleRow(Icons.notifications_rounded, AC.ocean,
+        'Alert Notifications', 'New users, flagged reports, POI submissions',
+        on: true),
+    _ToggleRow(Icons.shield_rounded, AC.purple,
+        '2FA Authentication', 'Required on every login',
+        on: true),
+    _ToggleRow(Icons.schedule_rounded, AC.gold,
+        'Session Timeout', 'Auto-logout after 30 minutes',
+        on: true),
   ];
 
-  // Admin action log
-  static final _logs = [
-    _LogRow(AC.green, 'Approved POI: Surin Beach Resort', '2h ago'),
-    _LogRow(AC.coral, 'Banned user: kevin@email.com', '5h ago'),
-    _LogRow(AC.amber, 'Hidden POI: Sunset Rooftop Bar', '1d ago'),
-    _LogRow(AC.ocean, 'Exported user report CSV', '2d ago'),
+  @override
+  void initState() {
+    super.initState();
+    _loadAccount();
+    _loadRecentLogs();
+  }
+
+  // ── Load Firebase Auth + Firestore account data ───────────────
+  Future<void> _loadAccount() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        if (mounted) setState(() => _accountLoaded = true);
+        return;
+      }
+
+      // Use Auth display name / email as immediate fallback
+      String name  = user.displayName ?? _displayName;
+      String email = user.email       ?? _email;
+
+      // Try to read richer data from Firestore users doc
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        if (doc.exists) {
+          name  = doc.data()?['name']  as String? ?? name;
+          email = doc.data()?['email'] as String? ?? email;
+        }
+      } catch (_) {}
+
+      // Derive initials from name
+      final initials = name.trim().isNotEmpty
+          ? name.trim().split(' ').take(2).map((w) => w[0].toUpperCase()).join()
+          : 'AD';
+
+      // Format member since from Auth createdAt
+      final created = user.metadata.creationTime;
+      String since = _memberSince;
+      if (created != null) {
+        const months = ['Jan','Feb','Mar','Apr','May','Jun',
+                        'Jul','Aug','Sep','Oct','Nov','Dec'];
+        since = '${created.day} ${months[created.month - 1]} ${created.year}';
+      }
+
+      if (mounted) {
+        setState(() {
+          _displayName   = name;
+          _email         = email;
+          _adminId       = 'ADMIN-${user.uid.substring(0, 6).toUpperCase()}';
+          _memberSince   = since;
+          _accountLoaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _accountLoaded = true);
+    }
+  }
+
+  // ── Load last 4 activity log entries ─────────────────────────
+  Future<void> _loadRecentLogs() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('activityLogs')
+          .orderBy('createdAt', descending: true)
+          .limit(4)
+          .get();
+      if (mounted) {
+        setState(() {
+          _recentLogs = snap.docs.map(_LiveLogRow.fromDoc).toList();
+          _logsLoaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _logsLoaded = true);
+    }
+  }
+
+  // ── Derive initials from display name ─────────────────────────
+  String get _initials {
+    final parts = _displayName.trim().split(' ').where((w) => w.isNotEmpty).toList();
+    if (parts.isEmpty) return 'AD';
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  // ── Account detail rows (built dynamically) ───────────────────
+  List<_InfoRow> get _accountRows => [
+    _InfoRow(Icons.person_rounded,          AC.ocean,  'Full Name', _displayName),
+    _InfoRow(Icons.mail_rounded,            AC.gold,   'Email',     _email),
+    _InfoRow(Icons.badge_rounded,           AC.purple, 'Admin ID',  _adminId,  mono: true),
+    _InfoRow(Icons.calendar_today_rounded,  AC.green,  'Since',     _memberSince),
   ];
 
+  // ══════════════════════════════════════════════════════════════
+  // BUILD
+  // ══════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AC.bg,
       body: Column(
         children: [
-          // ── STEP 1: Navy hero with avatar + role chip
           _buildHero(context),
-
-          // ── Scrollable body
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
               child: Column(
                 children: [
-                  // ── STEP 2: Account details section
                   _buildSection(
                     icon: Icons.person_rounded,
                     iconColor: AC.ocean,
                     title: 'Account Details',
                     child: Column(
-                      children: _accountRows
-                          .map((r) => _buildInfoRow(r))
-                          .toList(),
+                      children: _accountRows.map(_buildInfoRow).toList(),
                     ),
                   ),
                   const SizedBox(height: 14),
-
-                  // ── STEP 4: Permissions grid
                   _buildSection(
                     icon: Icons.shield_rounded,
                     iconColor: AC.purple,
@@ -178,85 +258,52 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                     child: _buildPermissionsGrid(),
                   ),
                   const SizedBox(height: 14),
-
-                  // ── STEP 5: Console settings toggles
                   _buildSection(
                     icon: Icons.settings_rounded,
                     iconColor: AC.gold,
                     title: 'Console Settings',
                     child: Column(
-                      children: _toggles
-                          .asMap()
-                          .entries
+                      children: _toggles.asMap().entries
                           .map((e) => _buildToggleRow(e.key, e.value))
                           .toList(),
                     ),
                   ),
                   const SizedBox(height: 14),
-
-                  // ── STEP 6: Recent admin actions log
                   _buildSection(
                     icon: Icons.assignment_rounded,
                     iconColor: AC.coral,
                     title: 'Recent Admin Actions',
-                    child: Column(
-                      children: _logs
-                          .asMap()
-                          .entries
-                          .map(
-                            (e) => _buildLogRow(
-                              e.value,
-                              isLast: e.key == _logs.length - 1,
-                            ),
-                          )
-                          .toList(),
-                    ),
+                    child: _buildRecentActions(),
                   ),
                   const SizedBox(height: 20),
-
-                  // ── STEP 7: Sign out button
                   _buildSignOutBtn(),
                   const SizedBox(height: 14),
-
-                  // ── STEP 8: Version footer
                   _buildVersionFooter(),
                 ],
               ),
             ),
           ),
-
           AdminBottomNav(activeIndex: 3),
         ],
       ),
     );
   }
 
-  // ── STEP 1: Hero area ─────────────────────────────────────────
-  // CSS: .profile-hero navy bg, pad-top:status-bar+10
-  //   .ph-avatar 72×72 gradient circle, initials
-  //   .ph-name DM Serif 20px white
-  //   .ph-role ocean-tint pill "Super Admin"
-  //   .ph-id DM Mono 11px white 40%
-  //
-  // NEW: Admin hero is all-navy (no wave cutout, no star bg).
-  // The avatar uses a gradient circle exactly like user cards,
-  // but 72×72. Role chip sits below name as an inline pill.
+  // ══════════════════════════════════════════════════════════════
+  // HERO
+  // ══════════════════════════════════════════════════════════════
   Widget _buildHero(BuildContext context) {
     return Container(
       width: double.infinity,
       color: AC.navy,
       padding: EdgeInsets.only(
         top: MediaQuery.of(context).padding.top + 16,
-        left: 16,
-        right: 16,
-        bottom: 20,
+        left: 16, right: 16, bottom: 20,
       ),
       child: Column(
         children: [
-          // Avatar
           Container(
-            width: 72,
-            height: 72,
+            width: 72, height: 72,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const LinearGradient(
@@ -264,35 +311,24 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                 end: Alignment.bottomRight,
                 colors: [AC.ocean, AC.oceanMid],
               ),
-              // Subtle white ring around avatar
               border: Border.all(
-                color: Colors.white.withOpacity(0.15),
-                width: 2,
-              ),
+                  color: Colors.white.withOpacity(0.15), width: 2),
             ),
             child: Center(
               child: Text(
-                'NF',
-                style: adminUi(
-                  size: 24,
-                  weight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+                _initials,
+                style: adminUi(size: 24, weight: FontWeight.w700,
+                    color: Colors.white),
               ),
             ),
           ),
           const SizedBox(height: 12),
-
-          // Name
-          Text(
-            'Nur Fatini',
-            style: adminDisplay(size: 20, color: Colors.white),
-          ),
+          Text(_displayName,
+              style: adminDisplay(size: 20, color: Colors.white)),
           const SizedBox(height: 6),
-
-          // Role chip — ocean tint pill
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
               color: AC.ocean.withOpacity(0.20),
               borderRadius: BorderRadius.circular(AR.full),
@@ -301,38 +337,29 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.verified_rounded,
-                  size: 12,
-                  color: AC.oceanMid,
-                ),
+                const Icon(Icons.verified_rounded, size: 12,
+                    color: AC.oceanMid),
                 const SizedBox(width: 5),
-                Text(
-                  'Super Admin',
-                  style: adminUi(
-                    size: 12,
-                    weight: FontWeight.w700,
-                    color: AC.oceanMid,
-                  ),
-                ),
+                Text('Super Admin',
+                    style: adminUi(size: 12, weight: FontWeight.w700,
+                        color: AC.oceanMid)),
               ],
             ),
           ),
           const SizedBox(height: 6),
-
-          // Admin ID in DM Mono
           Text(
-            'ADMIN-0042',
-            style: adminMono(size: 11, color: Colors.white.withOpacity(0.35)),
+            _adminId,
+            style: adminMono(size: 11,
+                color: Colors.white.withOpacity(0.35)),
           ),
         ],
       ),
     );
   }
 
-  // ── Section wrapper ───────────────────────────────────────────
-  // CSS: .profile-section surface r-16 border shadow-sm
-  //   .ps-header flex gap:8 items-center, 32×32 icon + title
+  // ══════════════════════════════════════════════════════════════
+  // SECTION WRAPPER
+  // ══════════════════════════════════════════════════════════════
   Widget _buildSection({
     required IconData icon,
     required Color iconColor,
@@ -355,8 +382,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
             child: Row(
               children: [
                 Container(
-                  width: 32,
-                  height: 32,
+                  width: 32, height: 32,
                   decoration: BoxDecoration(
                     color: iconColor.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(AR.md),
@@ -364,7 +390,8 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                   child: Icon(icon, size: 16, color: iconColor),
                 ),
                 const SizedBox(width: 10),
-                Text(title, style: adminUi(size: 14, weight: FontWeight.w700)),
+                Text(title,
+                    style: adminUi(size: 14, weight: FontWeight.w700)),
               ],
             ),
           ),
@@ -375,14 +402,9 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     );
   }
 
-  // ── STEP 2: Info row ──────────────────────────────────────────
-  // CSS: .info-row flex gap:10 items-center pad:11 14
-  //   .ir-icon 32×32 r-md tinted
-  //   .ir-label 11px text-3 flex:1
-  //   .ir-value 13px text-1 text-right (mono if flagged)
-  //
-  // NEW: right-aligned value. In CSS: margin-left:auto on .ir-value.
-  // Flutter equivalent: Expanded(child: label) pushes value right.
+  // ══════════════════════════════════════════════════════════════
+  // INFO ROW
+  // ══════════════════════════════════════════════════════════════
   Widget _buildInfoRow(_InfoRow row) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
@@ -392,8 +414,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
       child: Row(
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 32, height: 32,
             decoration: BoxDecoration(
               color: row.iconColor.withOpacity(0.08),
               borderRadius: BorderRadius.circular(AR.md),
@@ -402,107 +423,77 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              row.label,
-              style: adminUi(
-                size: 11,
-                weight: FontWeight.w600,
-                color: AC.text3,
-              ),
-            ),
+            child: Text(row.label,
+                style: adminUi(size: 11, weight: FontWeight.w600,
+                    color: AC.text3)),
           ),
-          // ── STEP 3: DM Mono for admin ID only
-          // CSS: .ir-value[admin-id] { font-family: DM Mono; font-size:13px }
-          // Other rows use Plus Jakarta Sans at 13px.
-          Text(
-            row.value,
-            style: row.mono
-                ? adminMono(size: 13)
-                : adminUi(size: 13, weight: FontWeight.w600),
-            textAlign: TextAlign.right,
-          ),
+          // Loading shimmer while account data loads
+          !_accountLoaded
+              ? Container(
+                  width: 80, height: 14,
+                  decoration: BoxDecoration(
+                    color: AC.surface2,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                )
+              : Text(
+                  row.value,
+                  style: row.mono
+                      ? adminMono(size: 13)
+                      : adminUi(size: 13, weight: FontWeight.w600),
+                  textAlign: TextAlign.right,
+                ),
         ],
       ),
     );
   }
 
-  // ── STEP 4: Permissions grid ──────────────────────────────────
-  // CSS: .perm-grid flex flex-wrap gap:8
-  //   .perm-tag r-full pad:5 10 flex gap:5 items-center
-  //   3 colour states:
-  //     green-tint + green icon+text (granted)
-  //     ocean-tint + ocean icon+text (limited)
-  //     coral-tint + coral ✕ icon+text (denied)
-  //
-  // NEW: Wrap widget for auto-wrapping tag grid.
-  // Flutter's Wrap is the direct equivalent of CSS flexbox with
-  // flex-wrap:wrap. spacing = column gap, runSpacing = row gap.
+  // ══════════════════════════════════════════════════════════════
+  // PERMISSIONS GRID
+  // ══════════════════════════════════════════════════════════════
   Widget _buildPermissionsGrid() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: _perms
-            .map(
-              (p) => Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: p.bg,
-                  borderRadius: BorderRadius.circular(AR.full),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(p.icon, size: 13, color: p.fg),
-                    const SizedBox(width: 5),
-                    Text(
-                      p.label,
-                      style: adminUi(
-                        size: 11,
-                        weight: FontWeight.w700,
-                        color: p.fg,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-            .toList(),
+        spacing: 8, runSpacing: 8,
+        children: _perms.map((p) => Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: p.bg,
+            borderRadius: BorderRadius.circular(AR.full),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(p.icon, size: 13, color: p.fg),
+              const SizedBox(width: 5),
+              Text(p.label,
+                  style: adminUi(size: 11, weight: FontWeight.w700,
+                      color: p.fg)),
+            ],
+          ),
+        )).toList(),
       ),
     );
   }
 
-  // ── STEP 5: Console toggle row ────────────────────────────────
-  // CSS: .toggle-row flex gap:10 items-center pad:11 14
-  //   .tr-icon 34×34 tinted r-md
-  //   .tr-content flex:1 (.tr-label 13px w700 + .tr-sub 11px text-2)
-  //   .toggle 44×24 pill:
-  //     .toggle.toggle-on — bg:ocean
-  //     .toggle-thumb 18×18 white circle
-  //   Transition: CSS "transition: all 0.2s" on both pill and dot
-  //
-  // Flutter: AnimatedContainer for pill bg colour change +
-  // AnimatedAlign for dot sliding left↔right.
-  // This is identical in logic to the tourist Profile screen toggle,
-  // but uses AC (admin) colours instead of tourist app colours.
+  // ══════════════════════════════════════════════════════════════
+  // CONSOLE TOGGLES
+  // ══════════════════════════════════════════════════════════════
   Widget _buildToggleRow(int index, _ToggleRow row) {
     return GestureDetector(
       onTap: () => setState(() => row.on = !row.on),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.symmetric(
+            horizontal: 14, vertical: 11),
         decoration: const BoxDecoration(
           border: Border(bottom: BorderSide(color: AC.borderLight)),
         ),
         child: Row(
           children: [
-            // Icon
             Container(
-              width: 34,
-              height: 34,
+              width: 34, height: 34,
               decoration: BoxDecoration(
                 color: row.iconColor.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(AR.md),
@@ -510,33 +501,22 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
               child: Icon(row.icon, size: 17, color: row.iconColor),
             ),
             const SizedBox(width: 10),
-
-            // Label + sub
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    row.title,
-                    style: adminUi(size: 13, weight: FontWeight.w700),
-                  ),
+                  Text(row.title,
+                      style: adminUi(size: 13, weight: FontWeight.w700)),
                   const SizedBox(height: 1),
-                  Text(row.sub, style: adminUi(size: 11, color: AC.text2)),
+                  Text(row.sub,
+                      style: adminUi(size: 11, color: AC.text2)),
                 ],
               ),
             ),
-
             const SizedBox(width: 12),
-
-            // Toggle pill
-            // CSS: width:44 height:24 border-radius:full padding:3
-            // Inner dot: 18×18 white circle
-            // On: bg=ocean, dot aligned right
-            // Off: bg=border, dot aligned left
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              width: 44,
-              height: 24,
+              width: 44, height: 24,
               padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(
                 color: row.on ? AC.ocean : AC.border,
@@ -548,8 +528,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                     ? Alignment.centerRight
                     : Alignment.centerLeft,
                 child: Container(
-                  width: 18,
-                  height: 18,
+                  width: 18, height: 18,
                   decoration: const BoxDecoration(
                     shape: BoxShape.circle,
                     color: Colors.white,
@@ -563,53 +542,84 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     );
   }
 
-  // ── STEP 6: Admin action log row ─────────────────────────────
-  // CSS: .log-row flex items-center gap:10 pad:10 14
-  //   .log-dot 8×8 circle coloured
-  //   .log-text flex:1 12px text-1 w600
-  //   .log-time DM Mono 10px text-3
-  Widget _buildLogRow(_LogRow row, {bool isLast = false}) {
+  // ══════════════════════════════════════════════════════════════
+  // RECENT ADMIN ACTIONS — live from activityLogs
+  // ══════════════════════════════════════════════════════════════
+  Widget _buildRecentActions() {
+    if (!_logsLoaded) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: CircularProgressIndicator(
+              color: AC.ocean, strokeWidth: 2),
+        ),
+      );
+    }
+
+    if (_recentLogs.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(
+            vertical: 16, horizontal: 14),
+        child: Text(
+          'No admin actions logged yet',
+          style: adminUi(size: 12, color: AC.text3),
+        ),
+      );
+    }
+
+    return Column(
+      children: _recentLogs.asMap().entries.map((e) {
+        final isLast = e.key == _recentLogs.length - 1;
+        return _buildLogRow(e.value, isLast: isLast);
+      }).toList(),
+    );
+  }
+
+  Widget _buildLogRow(_LiveLogRow row, {bool isLast = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(
+          horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         border: isLast
             ? null
-            : const Border(bottom: BorderSide(color: AC.borderLight)),
+            : const Border(
+                bottom: BorderSide(color: AC.borderLight)),
       ),
       child: Row(
         children: [
           Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: row.dot),
+            width: 8, height: 8,
+            decoration: BoxDecoration(
+                shape: BoxShape.circle, color: row.dot),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              row.text,
-              style: adminUi(size: 12, weight: FontWeight.w600),
-            ),
+            child: Text(row.text,
+                style: adminUi(size: 12, weight: FontWeight.w600)),
           ),
           const SizedBox(width: 8),
-          Text(row.time, style: adminMono(size: 10, color: AC.text3)),
+          Text(row.timeLabel,
+              style: adminMono(size: 10, color: AC.text3)),
         ],
       ),
     );
   }
 
-  // ── STEP 7: Sign-out button ───────────────────────────────────
-  // CSS: .signout-btn full-width coral-tint bg, coral text
-  //   border-radius:14px (not full — different from tourist sign-out)
-  //   flex items-center justify-center gap:8 h:48
-  //
-  // Admin uses r-14 not r-full to match the admin card aesthetic
+  // ══════════════════════════════════════════════════════════════
+  // SIGN OUT
+  // ══════════════════════════════════════════════════════════════
   Widget _buildSignOutBtn() {
     return GestureDetector(
-      onTap: () => Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (_) => false,
-      ),
+      onTap: () async {
+        await FirebaseAuth.instance.signOut();
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (_) => false,
+          );
+        }
+      },
       child: Container(
         width: double.infinity,
         height: 48,
@@ -623,31 +633,18 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
           children: [
             Icon(Icons.logout_rounded, size: 17, color: AC.coral),
             const SizedBox(width: 8),
-            Text(
-              'Sign Out',
-              style: adminUi(
-                size: 14,
-                weight: FontWeight.w700,
-                color: AC.coral,
-              ),
-            ),
+            Text('Sign Out',
+                style: adminUi(size: 14, weight: FontWeight.w700,
+                    color: AC.coral)),
           ],
         ),
       ),
     );
   }
 
-  // ── STEP 8: Version footer ────────────────────────────────────
-  // CSS: .version-note 11px text-3 text-center
-  //   <span> inside = oceanMid bold = "Fatini"
-  //
-  // NEW: RichText mixed-colour footer.
-  // Same pattern as tourist Profile screen version footer:
-  // TextSpan children with one override span for the name.
-  // "AndaMove Admin v1.0.0 · Built by Fatini · FYP 2026"
-  //
-  // The word "Fatini" uses oceanMid + FontWeight.w700 while the
-  // surrounding text uses text3 + w400.
+  // ══════════════════════════════════════════════════════════════
+  // VERSION FOOTER
+  // ══════════════════════════════════════════════════════════════
   Widget _buildVersionFooter() {
     return Center(
       child: RichText(
@@ -658,11 +655,8 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
             const TextSpan(text: 'AndaMove Admin v1.0.0 · Built by '),
             TextSpan(
               text: 'Fatini',
-              style: adminUi(
-                size: 11,
-                weight: FontWeight.w700,
-                color: AC.oceanMid,
-              ),
+              style: adminUi(size: 11, weight: FontWeight.w700,
+                  color: AC.oceanMid),
             ),
             const TextSpan(text: ' · FYP 2026'),
           ],

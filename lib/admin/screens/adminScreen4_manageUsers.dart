@@ -18,6 +18,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../admin_theme.dart';
+import '../../app_store.dart';
 
 // ══════════════════════════════════════════════════════════════
 // DATA MODEL — wraps a Firestore user doc with UI helpers
@@ -161,6 +162,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           .collection('users')
           .doc(u.uid)
           .update({'status': 'suspended'});
+      AppStore.logActivity(category: 'user', title: 'User suspended', sub: '${u.name} · ${u.email}');
       if (mounted) _snack('Suspended "${u.name}"', AC.amber);
     } catch (e) {
       if (mounted) _snack('Failed to suspend user', AC.coral);
@@ -173,6 +175,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           .collection('users')
           .doc(u.uid)
           .update({'status': 'active'});
+      AppStore.logActivity(category: 'user', title: 'User reactivated', sub: '${u.name} · ${u.email}');
       if (mounted) _snack('Reactivated "${u.name}"', AC.green);
     } catch (e) {
       if (mounted) _snack('Failed to reactivate user', AC.coral);
@@ -185,6 +188,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           .collection('users')
           .doc(u.uid)
           .delete();
+      AppStore.logActivity(category: 'user', title: 'User deleted', sub: '${u.name} · ${u.email}');
       if (mounted) _snack('Deleted "${u.name}"', AC.coral);
     } catch (e) {
       if (mounted) _snack('Failed to delete user', AC.coral);

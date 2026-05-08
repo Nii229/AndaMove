@@ -199,9 +199,10 @@ class AppStore {
   // screen5_home merges these with the hardcoded 25-POI list
   // so they appear instantly in the tourist app.
   //
-  // TODO: When Firebase is integrated, replace this with
-  //   Firestore writes and let screen5_home read from
-  //   Firestore instead of this static list.
+  // NOTE: Admin-created POIs also write to Firestore via
+  //   adminScreen3_createPOI._handlePublish(). This list
+  //   provides immediate local visibility before Firestore
+  //   refresh — both sources are correct.
   // ══════════════════════════════════════════════════════════
   static final List<SavedPoiSummary> adminCreatedPois = [];
 
@@ -225,8 +226,9 @@ class AppStore {
   // screen5_home should filter: skip hidden & deleted POIs.
   // adminScreen2_managePOI reads these to show correct status.
   //
-  // TODO: When Firebase is integrated, replace these Sets with
-  //   Firestore field updates (e.g. doc.update({status: 'hidden'}))
+  // NOTE: Firestore status updates are performed directly in
+  //   adminScreen2_managePOI._actions() alongside these
+  //   in-memory updates for immediate UI feedback.
   // ══════════════════════════════════════════════════════════
 
   /// Names of POIs currently hidden from tourists.
@@ -330,6 +332,27 @@ class AppStore {
     } catch (_) {}
   }
 
+  static void _syncPoiToFirestore(String poiName, bool isSaved) {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final docId = poiName
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+      final ref = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedPois')
+          .doc(docId);
+      if (isSaved) {
+        ref.set({'name': poiName, 'savedAt': FieldValue.serverTimestamp()});
+      } else {
+        ref.delete();
+      }
+    } catch (_) {}
+  }
+
   static Future<void> loadSavedVlogsFromFirestore(
       List<SavedVlogSummary> allVlogs) async {
     try {
@@ -351,6 +374,26 @@ class AppStore {
   }
 
   // ══════════════════════════════════════════════════════════
+  // ACTIVITY LOG
+  // ══════════════════════════════════════════════════════════
+  /// Writes a single entry to the activityLogs Firestore collection.
+  /// Fire-and-forget — never throws, never blocks UI.
+  static void logActivity({
+    required String category,
+    required String title,
+    required String sub,
+  }) {
+    try {
+      FirebaseFirestore.instance.collection('activityLogs').add({
+        'category': category,
+        'title': title,
+        'sub': sub,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+
+  // ══════════════════════════════════════════════════════════
   // POIS
   // ══════════════════════════════════════════════════════════
   static bool isPoiSaved(String name) => savedPois.any((p) => p.name == name);
@@ -362,6 +405,7 @@ class AppStore {
       savedPois.add(poi);
     }
     _notify();
+    _syncPoiToFirestore(poi.name, isPoiSaved(poi.name));
   }
 
   // ══════════════════════════════════════════════════════════

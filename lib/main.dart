@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'screens/screen1_splash.dart';
+import 'services/notification_service.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-runApp(const AndaMoveApp());
+  NotificationService.init();
+  runApp(const AndaMoveApp());
 }
 
 class AndaMoveApp extends StatelessWidget {

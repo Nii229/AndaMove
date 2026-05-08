@@ -22,6 +22,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../admin_theme.dart';
+import '../../app_store.dart';
 
 // ── Transport tag model ───────────────────────────────────────
 class _TransportTag {
@@ -347,6 +348,13 @@ class _AdminEditPoiScreenState extends State<AdminEditPoiScreen> {
             ]),
             duration: const Duration(seconds: 3),
           ),
+        );
+        AppStore.logActivity(
+          category: 'poi',
+          title: widget.firestoreDocId != null
+              ? 'POI updated'
+              : 'POI promoted to Firestore',
+          sub: '$name · $_selectedCategory',
         );
         Navigator.pop(context, true); // true = refresh Manage POIs
       }
@@ -982,7 +990,7 @@ class _AdminEditPoiScreenState extends State<AdminEditPoiScreen> {
           // Save Changes button
           Expanded(
             child: GestureDetector(
-              onTap: _isSaving ? null : _handleSave,
+              onTap: (_isSaving || _uploadingImage) ? null : _handleSave,
               child: Container(
                 height: 46,
                 decoration: BoxDecoration(

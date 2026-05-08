@@ -17,6 +17,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:share_plus/share_plus.dart';
 import '../app_store.dart';
+import '../services/notification_service.dart';
 import 'screen7_generateItinerary.dart' show GenerateItineraryScreen, PoiItem;
 import 'screen8_itineraryResult.dart' show ItineraryResultScreen, ItineraryViewMode;
 import 'screen10_navigation.dart' show NavigationScreen;
@@ -778,6 +779,13 @@ class _TripsScreenState extends State<TripsScreen>
         final time = stored != null
             ? TimeOfDay(hour: stored.startHour, minute: stored.startMinute)
             : const TimeOfDay(hour: 8, minute: 0);
+        NotificationService.scheduleTripReminder(
+          tripId: trip.id,
+          tripName: _displayName(trip),
+          tripDate: date,
+          startHour: time.hour,
+          startMinute: time.minute,
+        );
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => ItineraryResultScreen(
             transport: trip.transportLabel,
@@ -1012,6 +1020,7 @@ class _TripsScreenState extends State<TripsScreen>
           } catch (_) {}
           setState(() => _deletedIds.add(trip.id));
           _loadTripsFromFirestore(); // Refresh
+          NotificationService.cancelTripReminder(trip.id);
           _showSnack('"${_displayName(trip)}" deleted', AppColors.coral);
         },
         onCancel: () => Navigator.pop(context),

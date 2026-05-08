@@ -280,6 +280,14 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
           'status': 'upcoming',
           'createdAt': FieldValue.serverTimestamp(),
         });
+
+        FirebaseFirestore.instance
+            .collection('counters')
+            .doc('stats')
+            .set(
+              {'tripCount': FieldValue.increment(1)},
+              SetOptions(merge: true),
+            );
       }
     } catch (_) {}
   }

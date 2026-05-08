@@ -1124,11 +1124,17 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
                         width: 48,
                         height: 48,
                         child: poi.imagePath.isNotEmpty
-                            ? Image.asset(
-                                poi.imagePath,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _gt(poi),
-                              )
+                            ? (poi.imagePath.startsWith('http')
+                                ? Image.network(
+                                    poi.imagePath,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => _gt(poi),
+                                  )
+                                : Image.asset(
+                                    poi.imagePath,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => _gt(poi),
+                                  ))
                             : _gt(poi),
                       ),
                     ),
@@ -1285,6 +1291,7 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
                 await FirebaseFirestore.instance.collection('pois').doc(ap.firestoreDocId).update({'status': 'hidden'});
               }
               AppStore.hidePoi(n);
+              AppStore.logActivity(category: 'poi', title: 'POI hidden', sub: '$n → Hidden');
               _loadPois();
               _snack('"$n" hidden from tourists');
             },
@@ -1308,6 +1315,7 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
                 await FirebaseFirestore.instance.collection('pois').doc(ap.firestoreDocId).update({'status': 'active'});
               }
               AppStore.showPoi(n);
+              AppStore.logActivity(category: 'poi', title: 'POI restored', sub: '$n → Active');
               _loadPois();
               _snack('"$n" is now visible');
             },
@@ -1325,6 +1333,7 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
                 await FirebaseFirestore.instance.collection('pois').doc(ap.firestoreDocId).update({'status': 'active'});
               }
               AppStore.approvePoi(n);
+              AppStore.logActivity(category: 'poi', title: 'POI approved', sub: '$n → Active');
               _loadPois();
               _snack('"$n" approved!');
             },
@@ -1506,6 +1515,11 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
                         await FirebaseFirestore.instance.collection('pois').doc(ap.firestoreDocId).delete();
                       }
                       reject ? AppStore.rejectPoi(name) : AppStore.deletePoi(name);
+                      AppStore.logActivity(
+                        category: 'poi',
+                        title: reject ? 'POI rejected' : 'POI deleted',
+                        sub: '$name permanently removed',
+                      );
                       _loadPois();
                       _snack('"$name" ${reject ? "rejected" : "deleted"}');
                     },

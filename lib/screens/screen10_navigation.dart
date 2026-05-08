@@ -9,9 +9,11 @@
 //   4. "End Trip" shows a confirmation bottom sheet then pushes screen11_trips
 // ============================================================
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
@@ -292,6 +294,10 @@ class _NavigationScreenState extends State<NavigationScreen>
   // FIX 3: track which step the user is currently on
   int _currentStepIndex = 0;
 
+  StreamSubscription<Position>? _positionSub;
+  static const double _arrivalRadiusMetres = 100.0;
+  bool _arrivalHandled = false;
+
   GoogleMapController? _mapController;
   List<LatLng> _routePoints = [];
   bool _mapReady = false;
@@ -366,13 +372,137 @@ class _NavigationScreenState extends State<NavigationScreen>
       duration: const Duration(seconds: 4),
     )..repeat();
     _loadRoute();
+    _startLocationTracking();
   }
 
   @override
   void dispose() {
+    _positionSub?.cancel();
     _sheenCtrl.dispose();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _startLocationTracking() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      const settings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      );
+
+      _positionSub = Geolocator.getPositionStream(
+        locationSettings: settings,
+      ).listen(
+        _onPositionUpdate,
+        onError: (_) {},
+      );
+      if (mounted) setState(() {}); // refresh GPS dot
+    } catch (_) {}
+  }
+
+  void _onPositionUpdate(Position position) {
+    if (_routeStops.isEmpty) return;
+    if (_currentStepIndex >= _routeStops.length) return;
+    if (_arrivalHandled) return;
+
+    final target = _routeStops[_currentStepIndex];
+    if (target.latitude == 0.0 && target.longitude == 0.0) return;
+
+    final distanceMetres = Geolocator.distanceBetween(
+      position.latitude,
+      position.longitude,
+      target.latitude,
+      target.longitude,
+    );
+
+    if (distanceMetres <= _arrivalRadiusMetres) {
+      _arrivalHandled = true;
+
+      if (_currentStepIndex < _steps.length - 1) {
+        _onNextStop();
+
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) setState(() => _arrivalHandled = false);
+        });
+
+        if (mounted) {
+          final arrivedAt = _stopNames[_currentStepIndex - 1];
+          final nextStop = _currentStepIndex < _stopNames.length
+              ? _stopNames[_currentStepIndex]
+              : null;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.location_on_rounded,
+                      color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      nextStop != null
+                          ? '📍 Arrived at $arrivedAt! Next: $nextStop'
+                          : '📍 Arrived at $arrivedAt!',
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.green,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md)),
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.flag_rounded,
+                      color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '🏁 You\'ve reached your final destination!',
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.gold,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md)),
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _loadRoute() async {
@@ -436,6 +566,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   // FIX 3: advance to next step
   // ──────────────────────────────────────────────────────────
   void _onNextStop() {
+    _arrivalHandled = false;
     if (_currentStepIndex < _steps.length - 1) {
       setState(() => _currentStepIndex++);
       if (widget.tripId != null) {
@@ -619,33 +750,51 @@ class _NavigationScreenState extends State<NavigationScreen>
             onTap: () => Navigator.pop(context),
           ),
           const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppColors.mapOverlay.withOpacity(0.85),
-              borderRadius: BorderRadius.circular(AppRadius.full),
-              border: Border.all(color: Colors.white.withOpacity(0.15)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'To: ${_currentStepIndex < _stopNames.length ? _stopNames[_currentStepIndex] : _stopNames.last}',
-                  style: GoogleFonts.outfit(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.mapOverlay.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(AppRadius.full),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'To: ${_currentStepIndex < _stopNames.length ? _stopNames[_currentStepIndex] : _stopNames.last}',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      'Stop ${_currentStepIndex + 1} of ${_stopNames.length}',
+                      style: GoogleFonts.outfit(
+                        fontSize: 10,
+                        color: Colors.white.withValues(alpha: 0.50),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_positionSub != null)
+                Positioned(
+                  top: -3, right: -3,
+                  child: Container(
+                    width: 10, height: 10,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.green,
+                      border: Border.all(
+                          color: AppColors.mapOverlay, width: 1.5),
+                    ),
                   ),
                 ),
-                Text(
-                  'Stop ${_currentStepIndex + 1} of ${_stopNames.length}',
-                  style: GoogleFonts.outfit(
-                    fontSize: 10,
-                    color: Colors.white.withOpacity(0.50),
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
           const Spacer(),
           // FIX 2 — same width as the removed layers button to keep title centred
