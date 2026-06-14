@@ -24,6 +24,7 @@ import 'screen10_navigation.dart' show NavigationScreen;
 import 'screen5_home.dart' show HomeScreen;
 import 'screen14_explore.dart' show ExploreScreen;
 import 'screen12_profile.dart' show ProfileScreen;
+import '../widgets/app_bottom_nav.dart';
 
 // ══════════════════════════════════════════════════════════════
 // COLOR TOKENS
@@ -1044,24 +1045,35 @@ class _TripsScreenState extends State<TripsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Column(children: [
-        _buildHeader(),
-        Expanded(
-          child: _filteredTrips.isEmpty
-              ? _buildEmptyState()
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    _buildStatsBanner(),
-                    const SizedBox(height: 20),
-                    _buildSectionHeader(),
-                    const SizedBox(height: 12),
-                    ..._filteredTrips.map(_buildTripCard),
-                  ]),
-                ),
-        ),
-      ]),
-      bottomNavigationBar: _buildBottomNav(),
+      body: Stack(
+        children: [
+          Column(children: [
+            _buildHeader(),
+            Expanded(
+              child: _filteredTrips.isEmpty
+                  ? _buildEmptyState()
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildStatsBanner(),
+                            const SizedBox(height: 20),
+                            _buildSectionHeader(),
+                            const SizedBox(height: 12),
+                            ..._filteredTrips.map(_buildTripCard),
+                          ]),
+                    ),
+            ),
+          ]),
+          const Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: AppBottomNav(currentIndex: 3),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1349,9 +1361,9 @@ class _TripsScreenState extends State<TripsScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(AppRadius.full), border: Border.all(color: AppColors.borderLight), boxShadow: shadowLg),
-        child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, crossAxisAlignment: CrossAxisAlignment.end, children: [
-          _navItem(navItems[0], onTap: () => Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const HomeScreen()), (route) => false)),
-          _navItem(navItems[1], onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ExploreScreen()))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Expanded(child: _navItem(navItems[0], onTap: () => Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const HomeScreen()), (route) => false))),
+          Expanded(child: _navItem(navItems[1], onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ExploreScreen())))),
           Column(mainAxisSize: MainAxisSize.min, children: [
             Transform.translate(offset: const Offset(0, -18), child: Column(mainAxisSize: MainAxisSize.min, children: [
               GestureDetector(
@@ -1369,8 +1381,8 @@ class _TripsScreenState extends State<TripsScreen>
               Text('PLAN', style: GoogleFonts.outfit(fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: AppColors.oceanDeep)),
             ])),
           ]),
-          _navItem(navItems[2], onTap: () {}),
-          _navItem(navItems[3], onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen()))),
+          Expanded(child: _navItem(navItems[2], onTap: () {})),
+          Expanded(child: _navItem(navItems[3], onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())))),
         ]),
       ),
     );
@@ -1378,16 +1390,44 @@ class _TripsScreenState extends State<TripsScreen>
 
   Widget _navItem((IconData, String, bool) item, {required VoidCallback onTap}) {
     final (icon, label, isActive) = item;
-    return GestureDetector(onTap: onTap, child: AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(color: isActive ? AppColors.oceanTint : Colors.transparent, borderRadius: BorderRadius.circular(AppRadius.full)),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 22, color: isActive ? AppColors.oceanDeep : AppColors.text3),
-        const SizedBox(height: 3),
-        Text(label.toUpperCase(), style: GoogleFonts.outfit(fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: isActive ? AppColors.oceanDeep : AppColors.text3)),
-      ]),
-    ));
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      // Column(min) sizes to content height under BOTH bounded and unbounded
+      // height constraints. Center/Align expand to fill when maxHeight is
+      // bounded — which is exactly what bottomNavigationBar gives — causing the
+      // bar to balloon to full height. (Home uses Stack/Positioned, which gives
+      // unbounded height, so the bug never showed there.)
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: isActive ? AppColors.oceanTint : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.full),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 22, color: isActive ? AppColors.oceanDeep : AppColors.text3),
+              const SizedBox(height: 3),
+              Text(
+                label.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: isActive ? AppColors.oceanDeep : AppColors.text3,
+                ),
+              ),
+            ]),
+          ),
+        ],
+      ),
+    );
   }
 }
 

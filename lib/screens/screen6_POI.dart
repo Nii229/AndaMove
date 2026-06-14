@@ -181,7 +181,7 @@ final _mockItineraries = <ItinerarySummary>[
     transportLabel: 'Walking',
     transportIcon: Icons.directions_walk_rounded,
     coverColors: [Color(0xFF16A34A), Color(0xFF4ADE80)],
-    statusLabel: 'Completed',             // kept in data but hidden from picker
+    statusLabel: 'Completed', // kept in data but hidden from picker
     statusFg: Color(0xFF16A34A),
   ),
 ];
@@ -210,29 +210,40 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
   void _toggleFav() {
     HapticFeedback.lightImpact();
     final poi = widget.poi;
-    AppStore.togglePoi(SavedPoiSummary(
-      name: poi.name,
-      location: poi.location,
-      category: poi.category,
-      rating: poi.rating,
-      description: poi.description,
-      openHours: poi.openHours,
-      estimatedTime: poi.estimatedTime,
-      priceRange: poi.priceRange,
-      gradientColors: poi.gradientColors,
-      icon: poi.icon,
-      tagLabel: poi.tags.isNotEmpty ? poi.tags.first.label : poi.category,
-      tagBg: poi.tags.isNotEmpty ? poi.tags.first.bg : const Color(0xFFEAF8FD),
-      tagFg: poi.tags.isNotEmpty ? poi.tags.first.fg : const Color(0xFF0A7FAB),
-      imagePath: poi.imagePath,
-      longDescription: poi.longDescription,
-    ));
+    AppStore.togglePoi(
+      SavedPoiSummary(
+        name: poi.name,
+        location: poi.location,
+        category: poi.category,
+        rating: poi.rating,
+        description: poi.description,
+        openHours: poi.openHours,
+        estimatedTime: poi.estimatedTime,
+        priceRange: poi.priceRange,
+        gradientColors: poi.gradientColors,
+        icon: poi.icon,
+        tagLabel: poi.tags.isNotEmpty ? poi.tags.first.label : poi.category,
+        tagBg: poi.tags.isNotEmpty
+            ? poi.tags.first.bg
+            : const Color(0xFFEAF8FD),
+        tagFg: poi.tags.isNotEmpty
+            ? poi.tags.first.fg
+            : const Color(0xFF0A7FAB),
+        imagePath: poi.imagePath,
+        longDescription: poi.longDescription,
+        latitude: poi.latitude,
+        longitude: poi.longitude,
+      ),
+    );
     setState(() => _isFav = AppStore.isPoiSaved(poi.name));
 
     // Sync to Firestore (fire-and-forget)
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final docId = poi.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_').replaceAll(RegExp(r'^_+|_+$'), '');
+      final docId = poi.name
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
       final ref = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -252,6 +263,8 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
           'imagePath': poi.imagePath,
           'tagLabel': poi.tags.isNotEmpty ? poi.tags.first.label : poi.category,
           'longDescription': poi.longDescription,
+          'latitude': poi.latitude,
+          'longitude': poi.longitude,
           'savedAt': FieldValue.serverTimestamp(),
         });
       } else {
@@ -263,13 +276,18 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
   Future<void> _navigateToPoi() async {
     final poi = widget.poi;
     if (poi.latitude == 0.0 && poi.longitude == 0.0) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Location coordinates not available',
-              style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+          content: Text(
+            'Location coordinates not available',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+          ),
           backgroundColor: _C.coral,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           margin: const EdgeInsets.all(16),
         ),
       );
@@ -278,11 +296,26 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
     final url = Uri.parse(
       'https://www.google.com/maps/dir/?api=1'
       '&destination=${poi.latitude},${poi.longitude}'
-      '&destination_place_id='
       '&travelmode=driving',
     );
-    if (await canLaunchUrl(url)) {
+    try {
       await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not open Google Maps',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: _C.coral,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
     }
   }
 
@@ -302,12 +335,39 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
 
     return Row(
       children: [
-        ...List.generate(full, (_) => const Icon(Icons.star_rounded, size: 20, color: Color(0xFFF0C060))),
-        ...List.generate(half, (_) => const Icon(Icons.star_half_rounded, size: 20, color: Color(0xFFF0C060))),
-        ...List.generate(empty, (_) => const Icon(Icons.star_outline_rounded, size: 20, color: Color(0xFFF0C060))),
+        ...List.generate(
+          full,
+          (_) => const Icon(
+            Icons.star_rounded,
+            size: 20,
+            color: Color(0xFFF0C060),
+          ),
+        ),
+        ...List.generate(
+          half,
+          (_) => const Icon(
+            Icons.star_half_rounded,
+            size: 20,
+            color: Color(0xFFF0C060),
+          ),
+        ),
+        ...List.generate(
+          empty,
+          (_) => const Icon(
+            Icons.star_outline_rounded,
+            size: 20,
+            color: Color(0xFFF0C060),
+          ),
+        ),
         const SizedBox(width: 8),
-        Text(rating.toStringAsFixed(1),
-            style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w800, color: _C.text1)),
+        Text(
+          rating.toStringAsFixed(1),
+          style: GoogleFonts.outfit(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: _C.text1,
+          ),
+        ),
         const SizedBox(width: 5),
         Text('/ 5.0', style: GoogleFonts.outfit(fontSize: 12, color: _C.text3)),
       ],
@@ -328,9 +388,17 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
           onTap: () => Navigator.pop(context),
           child: Container(
             margin: const EdgeInsets.only(left: 16),
-            width: 38, height: 38,
-            decoration: BoxDecoration(color: Colors.black.withOpacity(0.30), shape: BoxShape.circle),
-            child: const Icon(Icons.arrow_back_ios_new_rounded, size: 17, color: Colors.white),
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.30),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              size: 17,
+              color: Colors.white,
+            ),
           ),
         ),
         actions: [
@@ -339,14 +407,20 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 220),
               margin: const EdgeInsets.only(right: 16),
-              width: 38, height: 38,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
-                color: _isFav ? _C.coral.withOpacity(0.85) : Colors.black.withOpacity(0.30),
+                color: _isFav
+                    ? _C.coral.withOpacity(0.85)
+                    : Colors.black.withOpacity(0.30),
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                _isFav ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
-                size: 18, color: Colors.white,
+                _isFav
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_outline_rounded,
+                size: 18,
+                color: Colors.white,
               ),
             ),
           ),
@@ -357,27 +431,81 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              height: 280, width: double.infinity,
+              height: 280,
+              width: double.infinity,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
                   poi.imagePath.isNotEmpty
-                      ? Image.asset(poi.imagePath, fit: BoxFit.cover,
+                      ? Image.asset(
+                          poi.imagePath,
+                          fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => Container(
-                            decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: poi.gradientColors)),
-                            child: Center(child: Icon(poi.icon, size: 90, color: Colors.white.withOpacity(0.18))),
-                          ))
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: poi.gradientColors,
+                              ),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                poi.icon,
+                                size: 90,
+                                color: Colors.white.withOpacity(0.18),
+                              ),
+                            ),
+                          ),
+                        )
                       : Container(
-                          decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: poi.gradientColors)),
-                          child: Center(child: Icon(poi.icon, size: 90, color: Colors.white.withOpacity(0.18))),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: poi.gradientColors,
+                            ),
+                          ),
+                          child: Center(
+                            child: Icon(
+                              poi.icon,
+                              size: 90,
+                              color: Colors.white.withOpacity(0.18),
+                            ),
+                          ),
                         ),
-                  Positioned(bottom: 0, left: 0, right: 0,
-                    child: Container(height: 100, decoration: BoxDecoration(
-                      gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withOpacity(0.60), Colors.transparent])))),
-                  Positioned(bottom: 14, left: 18,
-                    child: _heroBadge(icon: Icons.payments_outlined, label: poi.priceRange == 'Free' ? 'Free Entry' : poi.priceRange)),
-                  Positioned(bottom: 14, right: 18,
-                    child: _heroBadge(label: poi.category)),
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      height: 100,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Colors.black.withOpacity(0.60),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 14,
+                    left: 18,
+                    child: _heroBadge(
+                      icon: Icons.payments_outlined,
+                      label: poi.priceRange == 'Free'
+                          ? 'Free Entry'
+                          : poi.priceRange,
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 14,
+                    right: 18,
+                    child: _heroBadge(label: poi.category),
+                  ),
                 ],
               ),
             ),
@@ -386,84 +514,187 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(poi.name, style: GoogleFonts.playfairDisplay(fontSize: 26, fontWeight: FontWeight.w700, color: _C.text1, height: 1.2)),
+                  Text(
+                    poi.name,
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                      color: _C.text1,
+                      height: 1.2,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Row(children: [
-                    const Icon(Icons.location_on_rounded, size: 15, color: _C.text3),
-                    const SizedBox(width: 4),
-                    Expanded(child: Text(poi.location, style: GoogleFonts.outfit(fontSize: 13, color: _C.text2))),
-                  ]),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.location_on_rounded,
+                        size: 15,
+                        color: _C.text3,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          poi.location,
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            color: _C.text2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 14),
                   _buildStarRow(poi.rating),
                   const SizedBox(height: 14),
                   if (poi.tags.isNotEmpty) ...[
-                    Wrap(spacing: 7, runSpacing: 7,
-                      children: poi.tags.map((t) => Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-                        decoration: BoxDecoration(color: t.bg, borderRadius: BorderRadius.circular(999)),
-                        child: Text(t.label.toUpperCase(), style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: t.fg)),
-                      )).toList(),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: poi.tags
+                          .map(
+                            (t) => Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 11,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: t.bg,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                t.label.toUpperCase(),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.6,
+                                  color: t.fg,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
                     ),
                     const SizedBox(height: 22),
                   ],
-                  Text('About', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700, color: _C.text1)),
+                  Text(
+                    'About',
+                    style: GoogleFonts.outfit(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: _C.text1,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   AnimatedCrossFade(
                     duration: const Duration(milliseconds: 250),
-                    crossFadeState: _expandAbout ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                    firstChild: Text(poi.longDescription, maxLines: 3, overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.outfit(fontSize: 14, height: 1.65, color: _C.text2)),
-                    secondChild: Text(poi.longDescription,
-                        style: GoogleFonts.outfit(fontSize: 14, height: 1.65, color: _C.text2)),
+                    crossFadeState: _expandAbout
+                        ? CrossFadeState.showSecond
+                        : CrossFadeState.showFirst,
+                    firstChild: Text(
+                      poi.longDescription,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        height: 1.65,
+                        color: _C.text2,
+                      ),
+                    ),
+                    secondChild: Text(
+                      poi.longDescription,
+                      style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        height: 1.65,
+                        color: _C.text2,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 6),
                   GestureDetector(
                     onTap: () => setState(() => _expandAbout = !_expandAbout),
-                    child: Text(_expandAbout ? 'Show less ▲' : 'Read more ▼',
-                        style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700, color: _C.oceanDeep)),
+                    child: Text(
+                      _expandAbout ? 'Show less ▲' : 'Read more ▼',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _C.oceanDeep,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 22),
-                  _infoCard(icon: Icons.access_time_rounded, title: 'Opening Hours', value: poi.openHours),
+                  _infoCard(
+                    icon: Icons.access_time_rounded,
+                    title: 'Opening Hours',
+                    value: poi.openHours,
+                  ),
                   const SizedBox(height: 10),
-                  _infoCard(icon: Icons.schedule_rounded, title: 'Estimated Visit', value: poi.estimatedTime),
+                  _infoCard(
+                    icon: Icons.schedule_rounded,
+                    title: 'Estimated Visit',
+                    value: poi.estimatedTime,
+                  ),
                   const SizedBox(height: 10),
-                  _infoCard(icon: Icons.payments_outlined, title: 'Entry Fee', value: poi.priceRange == 'Free' ? 'Free Entry' : 'Paid · ${poi.priceRange}'),
+                  _infoCard(
+                    icon: Icons.payments_outlined,
+                    title: 'Entry Fee',
+                    value: poi.priceRange == 'Free'
+                        ? 'Free Entry'
+                        : 'Paid · ${poi.priceRange}',
+                  ),
                   const SizedBox(height: 22),
                   _buildMiniMap(),
                   const SizedBox(height: 28),
-                  Row(
+                  Column(
                     children: [
-                      Expanded(
-                        flex: 2,
-                        child: SizedBox(
-                          height: 54,
-                          child: OutlinedButton.icon(
-                            onPressed: _navigateToPoi,
-                            icon: const Icon(Icons.navigation_rounded, size: 18),
-                            label: Text('Navigate on\nGoogle Maps', textAlign: TextAlign.center, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w700, height: 1.3)),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _C.oceanDeep,
-                              side: const BorderSide(color: _C.oceanDeep, width: 1.5),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: OutlinedButton.icon(
+                          onPressed: _navigateToPoi,
+                          icon: const Icon(Icons.navigation_rounded, size: 18),
+                          label: Text(
+                            'Navigate on Google Maps',
+                            style: GoogleFonts.outfit(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _C.oceanDeep,
+                            side: const BorderSide(
+                              color: _C.oceanDeep,
+                              width: 1.5,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(999),
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        flex: 3,
-                        child: SizedBox(
-                          height: 54,
-                          child: ElevatedButton.icon(
-                            onPressed: _openAddSheet,
-                            icon: const Icon(Icons.add_location_alt_rounded, size: 20),
-                            label: Text('Add to Itinerary', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _C.oceanDeep,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shadowColor: Colors.transparent,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: ElevatedButton.icon(
+                          onPressed: _openAddSheet,
+                          icon: const Icon(
+                            Icons.add_location_alt_rounded,
+                            size: 20,
+                          ),
+                          label: Text(
+                            'Add to Itinerary',
+                            style: GoogleFonts.outfit(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _C.oceanDeep,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(999),
                             ),
                           ),
                         ),
@@ -482,28 +713,78 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
   Widget _heroBadge({IconData? icon, required String label}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: Colors.black.withOpacity(0.38), borderRadius: BorderRadius.circular(999), border: Border.all(color: Colors.white.withOpacity(0.18))),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (icon != null) ...[Icon(icon, size: 12, color: Colors.white), const SizedBox(width: 5)],
-        Text(label, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
-      ]),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.38),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: Colors.white),
+            const SizedBox(width: 5),
+          ],
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _infoCard({required IconData icon, required String title, required String value}) {
+  Widget _infoCard({
+    required IconData icon,
+    required String title,
+    required String value,
+  }) {
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: _C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: _C.borderLight), boxShadow: _shadowSm),
-      child: Row(children: [
-        Container(width: 42, height: 42, decoration: BoxDecoration(color: _C.oceanTint, borderRadius: BorderRadius.circular(12)),
-            child: Icon(icon, size: 20, color: _C.oceanDeep)),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: GoogleFonts.outfit(fontSize: 11, color: _C.text3)),
-          const SizedBox(height: 2),
-          Text(value, style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700, color: _C.text1)),
-        ])),
-      ]),
+      decoration: BoxDecoration(
+        color: _C.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _C.borderLight),
+        boxShadow: _shadowSm,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: _C.oceanTint,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 20, color: _C.oceanDeep),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.outfit(fontSize: 11, color: _C.text3),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: GoogleFonts.outfit(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _C.text1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -518,9 +799,14 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Location',
-            style: GoogleFonts.outfit(
-                fontSize: 16, fontWeight: FontWeight.w700, color: _C.text1)),
+        Text(
+          'Location',
+          style: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: _C.text1,
+          ),
+        ),
         const SizedBox(height: 10),
         Container(
           height: 180,
@@ -531,18 +817,12 @@ class _PoiDetailScreenState extends State<PoiDetailScreen> {
           ),
           clipBehavior: Clip.antiAlias,
           child: GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: poiLatLng,
-              zoom: 15,
-            ),
+            initialCameraPosition: CameraPosition(target: poiLatLng, zoom: 15),
             markers: {
               Marker(
                 markerId: MarkerId(poi.name),
                 position: poiLatLng,
-                infoWindow: InfoWindow(
-                  title: poi.name,
-                  snippet: poi.location,
-                ),
+                infoWindow: InfoWindow(title: poi.name, snippet: poi.location),
               ),
             },
             zoomControlsEnabled: false,
@@ -580,7 +860,10 @@ class _AddToItinerarySheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(color: _C.surface, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      decoration: const BoxDecoration(
+        color: _C.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
       child: SafeArea(
         top: false,
@@ -588,32 +871,81 @@ class _AddToItinerarySheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: _C.border, borderRadius: BorderRadius.circular(999)))),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: _C.border,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
             const SizedBox(height: 20),
-            Text('Add to Itinerary', style: GoogleFonts.playfairDisplay(fontSize: 20, fontWeight: FontWeight.w700, color: _C.text1)),
+            Text(
+              'Add to Itinerary',
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: _C.text1,
+              ),
+            ),
             const SizedBox(height: 4),
-            Row(children: [
-              const Icon(Icons.location_on_rounded, size: 13, color: _C.text3),
-              const SizedBox(width: 4),
-              Expanded(child: Text('${poi.name}  ·  ${poi.location}', style: GoogleFonts.outfit(fontSize: 12, color: _C.text2), maxLines: 1, overflow: TextOverflow.ellipsis)),
-            ]),
+            Row(
+              children: [
+                const Icon(
+                  Icons.location_on_rounded,
+                  size: 13,
+                  color: _C.text3,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    '${poi.name}  ·  ${poi.location}',
+                    style: GoogleFonts.outfit(fontSize: 12, color: _C.text2),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 22),
             _OptionTile(
-              icon: Icons.add_circle_outline_rounded, iconBg: _C.oceanTint, iconFg: _C.oceanDeep,
-              title: 'Create New Itinerary', subtitle: 'Start a fresh plan with this as the first stop',
-              badgeLabel: 'Recommended', badgeBg: _C.oceanTint, badgeFg: _C.oceanDeep,
+              icon: Icons.add_circle_outline_rounded,
+              iconBg: _C.oceanTint,
+              iconFg: _C.oceanDeep,
+              title: 'Create New Itinerary',
+              subtitle: 'Start a fresh plan with this as the first stop',
+              badgeLabel: 'Recommended',
+              badgeBg: _C.oceanTint,
+              badgeFg: _C.oceanDeep,
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => GenerateItineraryScreen(preSelectedPoiNames: [poi.name])));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => GenerateItineraryScreen(
+                      preSelectedPoiNames: [poi.name],
+                    ),
+                  ),
+                );
               },
             ),
             const SizedBox(height: 12),
             _OptionTile(
-              icon: Icons.playlist_add_rounded, iconBg: _C.goldTint, iconFg: _C.gold,
-              title: 'Add to Existing Itinerary', subtitle: 'Pick one of your saved trips',
+              icon: Icons.playlist_add_rounded,
+              iconBg: _C.goldTint,
+              iconFg: _C.gold,
+              title: 'Add to Existing Itinerary',
+              subtitle: 'Pick one of your saved trips',
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => SelectItineraryScreen(poi: poi)));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SelectItineraryScreen(poi: poi),
+                  ),
+                );
               },
             ),
           ],
@@ -624,12 +956,27 @@ class _AddToItinerarySheet extends StatelessWidget {
 }
 
 class _OptionTile extends StatelessWidget {
-  final IconData icon; final Color iconBg; final Color iconFg;
-  final String title; final String subtitle;
-  final String? badgeLabel; final Color? badgeBg; final Color? badgeFg;
+  final IconData icon;
+  final Color iconBg;
+  final Color iconFg;
+  final String title;
+  final String subtitle;
+  final String? badgeLabel;
+  final Color? badgeBg;
+  final Color? badgeFg;
   final VoidCallback onTap;
 
-  const _OptionTile({required this.icon, required this.iconBg, required this.iconFg, required this.title, required this.subtitle, this.badgeLabel, this.badgeBg, this.badgeFg, required this.onTap});
+  const _OptionTile({
+    required this.icon,
+    required this.iconBg,
+    required this.iconFg,
+    required this.title,
+    required this.subtitle,
+    this.badgeLabel,
+    this.badgeBg,
+    this.badgeFg,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -637,21 +984,75 @@ class _OptionTile extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: _C.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: _C.borderLight, width: 1.5), boxShadow: _shadowSm),
-        child: Row(children: [
-          Container(width: 48, height: 48, decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(14)), child: Icon(icon, size: 24, color: iconFg)),
-          const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(child: Text(title, style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700, color: _C.text1))),
-              if (badgeLabel != null) ...[const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), decoration: BoxDecoration(color: badgeBg, borderRadius: BorderRadius.circular(999)), child: Text(badgeLabel!, style: GoogleFonts.outfit(fontSize: 9, fontWeight: FontWeight.w700, color: badgeFg)))],
-            ]),
-            const SizedBox(height: 3),
-            Text(subtitle, style: GoogleFonts.outfit(fontSize: 12, color: _C.text2)),
-          ])),
-          const SizedBox(width: 8),
-          const Icon(Icons.chevron_right_rounded, size: 20, color: _C.text3),
-        ]),
+        decoration: BoxDecoration(
+          color: _C.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _C.borderLight, width: 1.5),
+          boxShadow: _shadowSm,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, size: 24, color: iconFg),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _C.text1,
+                          ),
+                        ),
+                      ),
+                      if (badgeLabel != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: badgeBg,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            badgeLabel!,
+                            style: GoogleFonts.outfit(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: badgeFg,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.outfit(fontSize: 12, color: _C.text2),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded, size: 20, color: _C.text3),
+          ],
+        ),
       ),
     );
   }
@@ -718,18 +1119,41 @@ class _SelectItineraryScreenState extends State<SelectItineraryScreen> {
         String dateStr = 'Not scheduled';
         if (date != null) {
           const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          dateStr = '${days[date.weekday - 1]}, ${date.day} ${months[date.month - 1]} ${date.year}';
+          const months = [
+            'Jan',
+            'Feb',
+            'Mar',
+            'Apr',
+            'May',
+            'Jun',
+            'Jul',
+            'Aug',
+            'Sep',
+            'Oct',
+            'Nov',
+            'Dec',
+          ];
+          dateStr =
+              '${days[date.weekday - 1]}, ${date.day} ${months[date.month - 1]} ${date.year}';
         }
 
         // Transport icon
         IconData transportIcon;
         switch (transport.toLowerCase()) {
-          case 'scooter': transportIcon = Icons.moped_rounded; break;
-          case 'tuk-tuk': transportIcon = Icons.electric_rickshaw_rounded; break;
-          case 'car': transportIcon = Icons.directions_car_rounded; break;
-          case 'walk': transportIcon = Icons.directions_walk_rounded; break;
-          default: transportIcon = Icons.directions_car_rounded;
+          case 'scooter':
+            transportIcon = Icons.moped_rounded;
+            break;
+          case 'tuk-tuk':
+            transportIcon = Icons.electric_rickshaw_rounded;
+            break;
+          case 'car':
+            transportIcon = Icons.directions_car_rounded;
+            break;
+          case 'walk':
+            transportIcon = Icons.directions_walk_rounded;
+            break;
+          default:
+            transportIcon = Icons.directions_car_rounded;
         }
 
         // Cover colors based on status
@@ -768,13 +1192,17 @@ class _SelectItineraryScreenState extends State<SelectItineraryScreen> {
   }
 
   List<ItinerarySummary> get _pickableItineraries {
-    final source = _firestoreItineraries.isNotEmpty ? _firestoreItineraries : _mockItineraries;
+    final source = _firestoreItineraries.isNotEmpty
+        ? _firestoreItineraries
+        : _mockItineraries;
     return source.where((it) => it.statusLabel != 'Completed').toList();
   }
 
   void _confirm() {
     if (_selectedId == null) return;
-    final source = _firestoreItineraries.isNotEmpty ? _firestoreItineraries : _mockItineraries;
+    final source = _firestoreItineraries.isNotEmpty
+        ? _firestoreItineraries
+        : _mockItineraries;
     final chosen = source.firstWhere((it) => it.id == _selectedId);
 
     // [FIX #1] Persist the added POI so screen11 can reflect the updated count
@@ -789,31 +1217,50 @@ class _SelectItineraryScreenState extends State<SelectItineraryScreen> {
           .collection('trips')
           .doc(_selectedId!)
           .update({
-        'stops': FieldValue.arrayUnion([{
-          'name': widget.poi.name,
-          'category': widget.poi.category,
-          'distance': '',
-          'stayMinutes': 60,
-          'latitude': widget.poi.latitude,
-          'longitude': widget.poi.longitude,
-          'imagePath': widget.poi.imagePath,
-        }]),
-      });
+            'stops': FieldValue.arrayUnion([
+              {
+                'name': widget.poi.name,
+                'category': widget.poi.category,
+                'distance': '',
+                'stayMinutes': 60,
+                'latitude': widget.poi.latitude,
+                'longitude': widget.poi.longitude,
+                'imagePath': widget.poi.imagePath,
+              },
+            ]),
+          });
     }
 
     Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      behavior: SnackBarBehavior.floating, backgroundColor: _C.text1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      content: Row(children: [
-        const Icon(Icons.check_circle_rounded, color: Color(0xFF4ADE80), size: 18),
-        const SizedBox(width: 10),
-        Expanded(child: Text('"${widget.poi.name}" added to "${chosen.name}"',
-            style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white))),
-      ]),
-      duration: const Duration(seconds: 3),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: _C.text1,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_rounded,
+              color: Color(0xFF4ADE80),
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '"${widget.poi.name}" added to "${chosen.name}"',
+                style: GoogleFonts.outfit(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   @override
@@ -823,68 +1270,173 @@ class _SelectItineraryScreenState extends State<SelectItineraryScreen> {
     return Scaffold(
       backgroundColor: _C.bg,
       appBar: AppBar(
-        backgroundColor: _C.surface, elevation: 0, surfaceTintColor: Colors.transparent,
-        leading: GestureDetector(onTap: () => Navigator.pop(context), child: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: _C.text1)),
-        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Select Itinerary', style: GoogleFonts.playfairDisplay(fontSize: 17, fontWeight: FontWeight.w700, color: _C.text1)),
-          Text('Adding "${widget.poi.name}"', style: GoogleFonts.outfit(fontSize: 11, color: _C.text2), maxLines: 1, overflow: TextOverflow.ellipsis),
-        ]),
-        titleSpacing: 4,
-        bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Container(height: 1, color: _C.borderLight)),
-      ),
-      body: Column(children: [
-        Padding(padding: const EdgeInsets.fromLTRB(20, 14, 20, 4), child: Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-            decoration: BoxDecoration(color: _C.oceanTint, borderRadius: BorderRadius.circular(999)),
-            child: Text('${list.length} available itineraries',
-                style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w700, color: _C.oceanDeep)),
+        backgroundColor: _C.surface,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            size: 18,
+            color: _C.text1,
           ),
-        ])),
-        Expanded(child: _loading
-            ? const Center(child: CircularProgressIndicator(color: _C.oceanDeep, strokeWidth: 3))
-            : list.isEmpty
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Select Itinerary',
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: _C.text1,
+              ),
+            ),
+            Text(
+              'Adding "${widget.poi.name}"',
+              style: GoogleFonts.outfit(fontSize: 11, color: _C.text2),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        titleSpacing: 4,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: _C.borderLight),
+        ),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _C.oceanTint,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${list.length} available itineraries',
+                    style: GoogleFonts.outfit(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: _C.oceanDeep,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: _C.oceanDeep,
+                      strokeWidth: 3,
+                    ),
+                  )
+                : list.isEmpty
                 ? _buildEmpty()
                 : ListView.builder(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                     itemCount: list.length,
                     itemBuilder: (_, i) => _buildItineraryCard(list[i]),
-                  )),
-      ]),
+                  ),
+          ),
+        ],
+      ),
       bottomNavigationBar: Container(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-        decoration: BoxDecoration(color: _C.surface, border: const Border(top: BorderSide(color: _C.borderLight)),
-            boxShadow: [BoxShadow(color: const Color(0xFF0A1F28).withOpacity(0.06), blurRadius: 12, offset: const Offset(0, -4))]),
-        child: SafeArea(top: false, child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 200), opacity: _selectedId != null ? 1.0 : 0.45,
-          child: SizedBox(width: double.infinity, height: 54,
-            child: ElevatedButton.icon(
-              onPressed: _selectedId != null ? _confirm : null,
-              icon: Icon(_selectedId != null ? Icons.check_rounded : Icons.touch_app_rounded, size: 20),
-              label: Text(_selectedId != null ? 'Add to this Itinerary' : 'Select an Itinerary First',
-                  style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _C.oceanDeep, disabledBackgroundColor: _C.oceanDeep,
-                foregroundColor: Colors.white, disabledForegroundColor: Colors.white,
-                elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999))),
+        decoration: BoxDecoration(
+          color: _C.surface,
+          border: const Border(top: BorderSide(color: _C.borderLight)),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0A1F28).withOpacity(0.06),
+              blurRadius: 12,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: _selectedId != null ? 1.0 : 0.45,
+            child: SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: ElevatedButton.icon(
+                onPressed: _selectedId != null ? _confirm : null,
+                icon: Icon(
+                  _selectedId != null
+                      ? Icons.check_rounded
+                      : Icons.touch_app_rounded,
+                  size: 20,
+                ),
+                label: Text(
+                  _selectedId != null
+                      ? 'Add to this Itinerary'
+                      : 'Select an Itinerary First',
+                  style: GoogleFonts.outfit(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _C.oceanDeep,
+                  disabledBackgroundColor: _C.oceanDeep,
+                  foregroundColor: Colors.white,
+                  disabledForegroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
             ),
           ),
-        )),
+        ),
       ),
     );
   }
 
   Widget _buildEmpty() {
     return Center(
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 64, height: 64, decoration: const BoxDecoration(color: _C.surface2, shape: BoxShape.circle),
-            child: const Icon(Icons.map_outlined, size: 28, color: _C.text3)),
-        const SizedBox(height: 14),
-        Text('No active itineraries', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: _C.text2)),
-        const SizedBox(height: 6),
-        Text('Create a new itinerary to add this place.',
-            style: GoogleFonts.outfit(fontSize: 13, color: _C.text3)),
-      ]),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: const BoxDecoration(
+              color: _C.surface2,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.map_outlined, size: 28, color: _C.text3),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'No active itineraries',
+            style: GoogleFonts.outfit(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: _C.text2,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Create a new itinerary to add this place.',
+            style: GoogleFonts.outfit(fontSize: 13, color: _C.text3),
+          ),
+        ],
+      ),
     );
   }
 
@@ -899,54 +1451,198 @@ class _SelectItineraryScreenState extends State<SelectItineraryScreen> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(color: _C.surface, borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: isSelected ? _C.oceanDeep : _C.borderLight, width: isSelected ? 2.0 : 1.5),
-            boxShadow: isSelected ? _shadowMd : _shadowSm),
-        child: Row(children: [
-          Container(width: 5, height: 90,
-              decoration: BoxDecoration(borderRadius: const BorderRadius.horizontal(left: Radius.circular(17)),
-                  gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: it.coverColors))),
-          Container(width: 50, height: 50, margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),
-                  gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: it.coverColors)),
-              child: Icon(it.transportIcon, size: 22, color: Colors.white.withOpacity(0.85))),
-          Expanded(child: Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(child: Text(it.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.outfit(fontSize: 13.5, fontWeight: FontWeight.w700, color: _C.text1))),
-              const SizedBox(width: 6),
-              Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(color: it.statusFg.withOpacity(0.10), borderRadius: BorderRadius.circular(999)),
-                  child: Text(it.statusLabel, style: GoogleFonts.outfit(fontSize: 9, fontWeight: FontWeight.w700, color: it.statusFg))),
-              const SizedBox(width: 10),
-            ]),
-            const SizedBox(height: 4),
-            Row(children: [const Icon(Icons.location_on_rounded, size: 11, color: _C.text3), const SizedBox(width: 3), Text(it.destination, style: GoogleFonts.outfit(fontSize: 11, color: _C.text2))]),
-            const SizedBox(height: 2),
-            Row(children: [const Icon(Icons.calendar_today_rounded, size: 11, color: _C.text3), const SizedBox(width: 3), Text(it.date, style: GoogleFonts.outfit(fontSize: 11, color: _C.text2))]),
-            const SizedBox(height: 8),
-            Row(children: [
-              _miniPill(Icons.location_on_rounded, '$totalStops stops', _C.oceanTint, _C.oceanDeep),
-              const SizedBox(width: 6),
-              _miniPill(it.transportIcon, it.transportLabel, _C.surface2, _C.text2),
-            ]),
-          ]))),
-          AnimatedContainer(duration: const Duration(milliseconds: 180), width: 24, height: 24, margin: const EdgeInsets.only(right: 14),
-              decoration: BoxDecoration(shape: BoxShape.circle, color: isSelected ? _C.oceanDeep : Colors.transparent,
-                  border: Border.all(color: isSelected ? _C.oceanDeep : _C.border, width: 2)),
-              child: isSelected ? const Icon(Icons.check_rounded, size: 14, color: Colors.white) : null),
-        ]),
+        decoration: BoxDecoration(
+          color: _C.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isSelected ? _C.oceanDeep : _C.borderLight,
+            width: isSelected ? 2.0 : 1.5,
+          ),
+          boxShadow: isSelected ? _shadowMd : _shadowSm,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 5,
+              height: 90,
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.horizontal(
+                  left: Radius.circular(17),
+                ),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: it.coverColors,
+                ),
+              ),
+            ),
+            Container(
+              width: 50,
+              height: 50,
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: it.coverColors,
+                ),
+              ),
+              child: Icon(
+                it.transportIcon,
+                size: 22,
+                color: Colors.white.withOpacity(0.85),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            it.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.outfit(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                              color: _C.text1,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: it.statusFg.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            it.statusLabel,
+                            style: GoogleFonts.outfit(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: it.statusFg,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.location_on_rounded,
+                          size: 11,
+                          color: _C.text3,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          it.destination,
+                          style: GoogleFonts.outfit(
+                            fontSize: 11,
+                            color: _C.text2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.calendar_today_rounded,
+                          size: 11,
+                          color: _C.text3,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          it.date,
+                          style: GoogleFonts.outfit(
+                            fontSize: 11,
+                            color: _C.text2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _miniPill(
+                          Icons.location_on_rounded,
+                          '$totalStops stops',
+                          _C.oceanTint,
+                          _C.oceanDeep,
+                        ),
+                        const SizedBox(width: 6),
+                        _miniPill(
+                          it.transportIcon,
+                          it.transportLabel,
+                          _C.surface2,
+                          _C.text2,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 24,
+              height: 24,
+              margin: const EdgeInsets.only(right: 14),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected ? _C.oceanDeep : Colors.transparent,
+                border: Border.all(
+                  color: isSelected ? _C.oceanDeep : _C.border,
+                  width: 2,
+                ),
+              ),
+              child: isSelected
+                  ? const Icon(
+                      Icons.check_rounded,
+                      size: 14,
+                      color: Colors.white,
+                    )
+                  : null,
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _miniPill(IconData icon, String label, Color bg, Color fg) {
-    return Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
           Icon(icon, size: 10, color: fg),
           const SizedBox(width: 4),
-          Text(label, style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, color: fg)),
-        ]));
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: fg,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

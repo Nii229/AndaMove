@@ -600,6 +600,21 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   // ──────────────────────────────────────────────────────────
+  // Complete Trip — called from the single full-width button
+  // shown only on the final stop
+  // ──────────────────────────────────────────────────────────
+  void _onCompleteTrip() {
+    if (widget.tripId != null) {
+      AppStore.setTripProgress(widget.tripId!, 0);
+      AppStore.completeTrip(widget.tripId!);
+    }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const TripsScreen()),
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
   // FIX 4: End Trip confirmation bottom sheet
   // ──────────────────────────────────────────────────────────
   void _onEndTrip() {
@@ -642,13 +657,33 @@ class _NavigationScreenState extends State<NavigationScreen>
   // MAP AREA
   // ══════════════════════════════════════════════════════════
   Widget _buildMapArea() {
+    // Guard: don't build the map until route stops are loaded.
+    // Prevents RangeError on _routeStops[0] / _routeStops.first.
+    if (_routeStops.isEmpty) {
+      return SizedBox(
+        height: 356,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text('Loading route…'),
+            ],
+          ),
+        ),
+      );
+    }
+
     final markers = <Marker>{};
     for (int i = 0; i < _routeStops.length; i++) {
       final isCurrent = i <= _currentStepIndex;
       markers.add(Marker(
         markerId: MarkerId('stop_$i'),
         position: _routeStops[i],
-        infoWindow: InfoWindow(title: 'Stop ${i + 1}: ${_stopNames[i]}'),
+        infoWindow: InfoWindow(
+          title: 'Stop ${i + 1}: ${i < _stopNames.length ? _stopNames[i] : ''}',
+        ),
         icon: BitmapDescriptor.defaultMarkerWithHue(
           i == 0
               ? BitmapDescriptor.hueGreen
@@ -682,8 +717,10 @@ class _NavigationScreenState extends State<NavigationScreen>
             },
             onMapCreated: (controller) {
               _mapController = controller;
-              double minLat = _routeStops.first.latitude, maxLat = _routeStops.first.latitude;
-              double minLng = _routeStops.first.longitude, maxLng = _routeStops.first.longitude;
+              double minLat = _routeStops.first.latitude,
+                  maxLat = _routeStops.first.latitude;
+              double minLng = _routeStops.first.longitude,
+                  maxLng = _routeStops.first.longitude;
               for (final s in _routeStops) {
                 if (s.latitude < minLat) minLat = s.latitude;
                 if (s.latitude > maxLat) maxLat = s.latitude;
@@ -707,7 +744,9 @@ class _NavigationScreenState extends State<NavigationScreen>
           ),
           _buildMapTopControls(),
           Positioned(
-            bottom: 0, left: 0, right: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
             child: SizedBox(
               height: 4,
               child: Row(
@@ -753,32 +792,38 @@ class _NavigationScreenState extends State<NavigationScreen>
           Stack(
             clipBehavior: Clip.none,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.mapOverlay.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(AppRadius.full),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'To: ${_currentStepIndex < _stopNames.length ? _stopNames[_currentStepIndex] : _stopNames.last}',
-                      style: GoogleFonts.outfit(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 200),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.mapOverlay.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(AppRadius.full),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'To: ${_currentStepIndex < _stopNames.length ? _stopNames[_currentStepIndex] : _stopNames.last}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'Stop ${_currentStepIndex + 1} of ${_stopNames.length}',
-                      style: GoogleFonts.outfit(
-                        fontSize: 10,
-                        color: Colors.white.withValues(alpha: 0.50),
+                      Text(
+                        'Stop ${_currentStepIndex + 1} of ${_stopNames.length}',
+                        style: GoogleFonts.outfit(
+                          fontSize: 10,
+                          color: Colors.white.withValues(alpha: 0.50),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               if (_positionSub != null)
@@ -1092,87 +1137,133 @@ class _NavigationScreenState extends State<NavigationScreen>
         color: AppColors.surface,
         border: Border(top: BorderSide(color: AppColors.borderLight)),
       ),
-      child: Row(
-        children: [
-          // FIX 4 — End Trip opens confirmation sheet
-          Expanded(
-            flex: 1,
-            child: GestureDetector(
-              onTap: _onEndTrip,
-              child: Container(
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.coralTint,
-                  borderRadius: BorderRadius.circular(AppRadius.full),
-                  border: Border.all(color: AppColors.coral, width: 1.5),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.stop_circle_rounded,
-                      color: AppColors.coral,
-                      size: 17,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'End Trip',
-                      style: GoogleFonts.outfit(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.coral,
+      child: isLastStep
+          ? _buildCompleteTripButton()
+          : Row(
+              children: [
+                // End Trip opens confirmation sheet
+                Expanded(
+                  flex: 1,
+                  child: GestureDetector(
+                    onTap: _onEndTrip,
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: AppColors.coralTint,
+                        borderRadius: BorderRadius.circular(AppRadius.full),
+                        border: Border.all(color: AppColors.coral, width: 1.5),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.stop_circle_rounded,
+                            color: AppColors.coral,
+                            size: 17,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'End Trip',
+                            style: GoogleFonts.outfit(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.coral,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-
-          // FIX 3 — Next Stop advances the step; shows "Arrived" at last step
-          Expanded(
-            flex: 2,
-            child: AnimatedBuilder(
-              animation: _sheenCtrl,
-              builder: (_, __) => GestureDetector(
-                onTap: _onNextStop,
-                child: Container(
-                  height: 48,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: isLastStep
-                          ? [AppColors.gold, AppColors.goldLight]
-                          : [AppColors.oceanDeep, AppColors.oceanMid],
-                    ),
-                    borderRadius: BorderRadius.circular(AppRadius.full),
-                    boxShadow: [shadowOcean],
                   ),
-                  child: Center(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.navigation_rounded, color: Colors.white, size: 19),
-                        const SizedBox(width: 8),
-                        Text(
-                          isLastStep ? 'Arrived!' : 'Next Stop',
-                          style: GoogleFonts.outfit(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: 0.3,
+                ),
+                const SizedBox(width: 10),
+
+                // Next Stop advances to the next step
+                Expanded(
+                  flex: 2,
+                  child: AnimatedBuilder(
+                    animation: _sheenCtrl,
+                    builder: (_, _) => GestureDetector(
+                      onTap: _onNextStop,
+                      child: Container(
+                        height: 48,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [AppColors.oceanDeep, AppColors.oceanMid],
+                          ),
+                          borderRadius: BorderRadius.circular(AppRadius.full),
+                          boxShadow: [shadowOcean],
+                        ),
+                        child: Center(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.navigation_rounded,
+                                  color: Colors.white, size: 19),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Next Stop',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildCompleteTripButton() {
+    return AnimatedBuilder(
+      animation: _sheenCtrl,
+      builder: (_, _) => GestureDetector(
+        onTap: _onCompleteTrip,
+        child: Container(
+          height: 54,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [AppColors.green, Color(0xFF22C55E)],
+            ),
+            borderRadius: BorderRadius.circular(AppRadius.full),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x4016A34A),
+                blurRadius: 20,
+                offset: Offset(0, 8),
               ),
+            ],
+          ),
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.flag_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Complete Trip',
+                  style: GoogleFonts.outfit(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

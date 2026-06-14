@@ -38,6 +38,7 @@ import 'screen2_login.dart';
 import 'screen5_home.dart';
 import 'screen7_generateItinerary.dart' show GenerateItineraryScreen;
 import 'screen11_trips.dart' show TripsScreen;
+import '../widgets/app_bottom_nav.dart';
 
 // ══════════════════════════════════════════════════════════════
 // COLOR TOKENS
@@ -325,29 +326,38 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Column(
+      body: Stack(
         children: [
-          _buildProfileHero(),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.only(bottom: 100),
-              child: Column(
-                children: [
-                  _buildSavedSection(),
-                  _buildPersonalInfoGroup(),
-                  _buildFamilyGroup(),
-                  _buildSettingsGroup(),
-                  _buildPartnerCard(),
-                  _buildSupportGroup(),
-                  _buildSignOutRow(),
-                  _buildVersionFooter(),
-                ],
+          Column(
+            children: [
+              _buildProfileHero(),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.only(bottom: 100),
+                  child: Column(
+                    children: [
+                      _buildSavedSection(),
+                      _buildPersonalInfoGroup(),
+                      _buildFamilyGroup(),
+                      _buildSettingsGroup(),
+                      _buildPartnerCard(),
+                      _buildSupportGroup(),
+                      _buildSignOutRow(),
+                      _buildVersionFooter(),
+                    ],
+                  ),
+                ),
               ),
-            ),
+            ],
+          ),
+          const Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: AppBottomNav(currentIndex: 4),
           ),
         ],
       ),
-      bottomNavigationBar: _buildBottomNav(),
     );
   }
 
@@ -1036,6 +1046,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               priceRange: poi.priceRange,
               isFavourited: true,
               tags: [PoiTag(poi.tagLabel, poi.tagBg, poi.tagFg)],
+              latitude: poi.latitude,
+              longitude: poi.longitude,
             ),
           ),
         ),
@@ -1975,24 +1987,23 @@ class _ProfileScreenState extends State<ProfileScreen>
           boxShadow: shadowLg,
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            _navItem(
+            Expanded(child: _navItem(
               items[0],
               onTap: () => Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => const HomeScreen()),
                 (route) => false,
               ),
-            ),
-            _navItem(
+            )),
+            Expanded(child: _navItem(
               items[1],
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const ExploreScreen()),
               ),
-            ),
+            )),
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2063,58 +2074,62 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ],
             ),
-            _navItem(
+            Expanded(child: _navItem(
               items[2],
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const TripsScreen()),
               ),
-            ),
-            _navItem(items[3], onTap: () {}), // already on Profile
+            )),
+            Expanded(child: _navItem(items[3], onTap: () {})), // already on Profile
           ],
         ),
       ),
     );
   }
 
-  Widget _navItem(
-    (IconData, String, bool) item, {
-    required VoidCallback onTap,
-  }) {
+  Widget _navItem((IconData, String, bool) item, {required VoidCallback onTap}) {
     final (icon, label, isActive) = item;
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.oceanTint : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.full),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 22,
-              color: isActive ? AppColors.oceanDeep : AppColors.text3,
+      // Column(min) sizes to content height under BOTH bounded and unbounded
+      // height constraints. Center/Align expand to fill when maxHeight is
+      // bounded — which is exactly what bottomNavigationBar gives — causing the
+      // bar to balloon to full height. (Home uses Stack/Positioned, which gives
+      // unbounded height, so the bug never showed there.)
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: isActive ? AppColors.oceanTint : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.full),
             ),
-            const SizedBox(height: 3),
-            Text(
-              label.toUpperCase(),
-              style: GoogleFonts.outfit(
-                fontSize: 9,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.8,
-                color: isActive ? AppColors.oceanDeep : AppColors.text3,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 22, color: isActive ? AppColors.oceanDeep : AppColors.text3),
+              const SizedBox(height: 3),
+              Text(
+                label.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: isActive ? AppColors.oceanDeep : AppColors.text3,
+                ),
               ),
-            ),
-          ],
-        ),
+            ]),
+          ),
+        ],
       ),
     );
   }
-
+    
   Widget _groupLabel(String text) {
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 8),

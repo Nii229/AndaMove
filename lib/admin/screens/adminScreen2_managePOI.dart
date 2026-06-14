@@ -642,6 +642,8 @@ List<_AdminPoi> _buildAllPois() {
             gradientColors: p.gradientColors,
             icon: p.icon,
             tags: [PoiTag(p.tagLabel, p.tagBg, p.tagFg)],
+            latitude: p.latitude,
+            longitude: p.longitude,
           ),
         ),
       )
@@ -707,6 +709,8 @@ class _AdminPoiScreenState extends State<AdminPoiScreen> {
               final c = _tagColors(t);
               return PoiTag(t, c.$1, c.$2);
             }).toList(),
+            latitude: (d['latitude'] as num?)?.toDouble() ?? 0.0,
+            longitude: (d['longitude'] as num?)?.toDouble() ?? 0.0,
           ),
           viewsText: '${rating.toStringAsFixed(1)} · ${d['createdBy'] == 'admin' ? 'Admin' : 'Seed'}',
           firestoreDocId: doc.id,

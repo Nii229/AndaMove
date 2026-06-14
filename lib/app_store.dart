@@ -71,6 +71,8 @@ class SavedPoiSummary {
   final Color tagFg;
   final String imagePath;
   final String longDescription;
+  final double latitude;
+  final double longitude;
 
   const SavedPoiSummary({
     required this.name,
@@ -88,6 +90,8 @@ class SavedPoiSummary {
     required this.tagFg,
     this.imagePath = '',
     this.longDescription = '',
+    this.latitude = 0.0,
+    this.longitude = 0.0,
   });
 }
 

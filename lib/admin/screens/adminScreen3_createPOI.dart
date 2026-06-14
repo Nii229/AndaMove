@@ -228,6 +228,8 @@ class _AdminCreatePoiScreenState
         tagBg: tagBg,
         tagFg: tagFg,
         imagePath: _uploadedImageUrl ?? '',
+        latitude: double.tryParse(_latCtrl.text.trim()) ?? 0.0,
+        longitude: double.tryParse(_lngCtrl.text.trim()) ?? 0.0,
       ));
       AppStore.logActivity(
         category: 'poi',

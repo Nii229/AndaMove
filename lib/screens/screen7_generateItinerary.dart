@@ -179,6 +179,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.beach_access_rounded,
       thumbGradient: [Color(0xFF6B3FA0), Color(0xFFE8634C)],
       imagePath: 'assets/images/kata_beach.jpg',
+      latitude: 7.8206,
+      longitude: 98.2985,
     ),
     PoiItem(
       name: 'Patong Beach',
@@ -188,6 +190,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.waves_rounded,
       thumbGradient: [Color(0xFF0A7FAB), Color(0xFF38BDF8)],
       imagePath: 'assets/images/patong_beach.jpg',
+      latitude: 7.8907,
+      longitude: 98.2963,
     ),
     PoiItem(
       name: 'Freedom Beach',
@@ -197,6 +201,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.beach_access_rounded,
       thumbGradient: [Color(0xFF14B8A6), Color(0xFF0EA5E9)],
       imagePath: 'assets/images/freedom_beach.jpg',
+      latitude: 7.8773,
+      longitude: 98.2745,
     ),
     PoiItem(
       name: 'Surin Beach',
@@ -206,6 +212,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.beach_access_rounded,
       thumbGradient: [Color(0xFF0284C7), Color(0xFF0EA5E9)],
       imagePath: 'assets/images/surin_beach.jpg',
+      latitude: 7.9772,
+      longitude: 98.2786,
     ),
     PoiItem(
       name: 'Nai Harn Beach',
@@ -215,6 +223,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.waves_rounded,
       thumbGradient: [Color(0xFF0F766E), Color(0xFF14B8A6)],
       imagePath: 'assets/images/nai_harn_beach.jpg',
+      latitude: 7.7747,
+      longitude: 98.3060,
     ),
     // Temples
     PoiItem(
@@ -225,6 +235,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.temple_buddhist_rounded,
       thumbGradient: [Color(0xFF0A7FAB), Color(0xFF1AAECF)],
       imagePath: 'assets/images/the_big_buddha.jpg',
+      latitude: 7.8276,
+      longitude: 98.3120,
     ),
     PoiItem(
       name: 'Wat Chalong',
@@ -234,6 +246,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.account_balance_rounded,
       thumbGradient: [Color(0xFFFBBF24), Color(0xFFF59E0B)],
       imagePath: 'assets/images/wat_chalong.jpg',
+      latitude: 7.8466,
+      longitude: 98.3376,
     ),
     // Nature
     PoiItem(
@@ -244,6 +258,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.pets_rounded,
       thumbGradient: [Color(0xFF16A34A), Color(0xFF22C55E)],
       imagePath: 'assets/images/phuket_elephant_sanctuary.jpg',
+      latitude: 7.9519,
+      longitude: 98.3700,
     ),
     PoiItem(
       name: 'Sirinat Natl Park',
@@ -253,6 +269,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.park_rounded,
       thumbGradient: [Color(0xFF15803D), Color(0xFF22C55E)],
       imagePath: 'assets/images/sirinat_national_park.jpg',
+      latitude: 8.1050,
+      longitude: 98.2950,
     ),
     PoiItem(
       name: 'Koh Sirey',
@@ -262,6 +280,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.forest_rounded,
       thumbGradient: [Color(0xFF166534), Color(0xFF4ADE80)],
       imagePath: 'assets/images/koh_sirey.jpg',
+      latitude: 7.8939,
+      longitude: 98.4203,
     ),
     // Culture
     PoiItem(
@@ -272,6 +292,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.location_city_rounded,
       thumbGradient: [Color(0xFF8B4513), Color(0xFFC8912E)],
       imagePath: 'assets/images/old_phuket_town.jpg',
+      latitude: 7.8841,
+      longitude: 98.3880,
     ),
     PoiItem(
       name: 'Phuket Fantasea',
@@ -281,6 +303,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.celebration_rounded,
       thumbGradient: [Color(0xFF7C3AED), Color(0xFFA855F7)],
       imagePath: 'assets/images/phuket_fantasea.jpg',
+      latitude: 7.9512,
+      longitude: 98.2862,
     ),
     // Food
     PoiItem(
@@ -291,6 +315,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.set_meal_rounded,
       thumbGradient: [Color(0xFFE8634C), Color(0xFFF97316)],
       imagePath: 'assets/images/rawai_seafood_market.jpg',
+      latitude: 7.7757,
+      longitude: 98.3265,
     ),
     PoiItem(
       name: 'Walking Street',
@@ -300,6 +326,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.restaurant_rounded,
       thumbGradient: [Color(0xFFD97706), Color(0xFFF59E0B)],
       imagePath: 'assets/images/phuket_town_walking_street.jpg',
+      latitude: 7.8838,
+      longitude: 98.3877,
     ),
     PoiItem(
       name: 'Blue Elephant',
@@ -309,6 +337,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.dining_rounded,
       thumbGradient: [Color(0xFF1D4ED8), Color(0xFF3B82F6)],
       imagePath: 'assets/images/blue_elephant_restaurant.jpg',
+      latitude: 7.8830,
+      longitude: 98.3835,
     ),
     // Adventure
     PoiItem(
@@ -319,6 +349,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.pets_rounded,
       thumbGradient: [Color(0xFFEA580C), Color(0xFFF97316)],
       imagePath: 'assets/images/tiger_kingdom.jpg',
+      latitude: 7.9214,
+      longitude: 98.3573,
     ),
     PoiItem(
       name: 'ATV & Zipline',
@@ -328,6 +360,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.directions_bike_rounded,
       thumbGradient: [Color(0xFF166534), Color(0xFF16A34A)],
       imagePath: 'assets/images/atv_&_zipline.jpg',
+      latitude: 7.9000,
+      longitude: 98.3500,
     ),
     PoiItem(
       name: 'Phi Phi Day Trip',
@@ -337,6 +371,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.sailing_rounded,
       thumbGradient: [Color(0xFF0369A1), Color(0xFF0EA5E9)],
       imagePath: 'assets/images/phi_phi_island.jpg',
+      latitude: 7.7407,
+      longitude: 98.7784,
     ),
     // Nightlife
     PoiItem(
@@ -347,6 +383,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.nightlife_rounded,
       thumbGradient: [Color(0xFF7C3AED), Color(0xFFDB2777)],
       imagePath: 'assets/images/bangla_road.jpg',
+      latitude: 7.8930,
+      longitude: 98.2965,
     ),
     PoiItem(
       name: 'Illuzion Club',
@@ -356,6 +394,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.music_note_rounded,
       thumbGradient: [Color(0xFF4C1D95), Color(0xFF7C3AED)],
       imagePath: 'assets/images/illuzion_club.jpg',
+      latitude: 7.8925,
+      longitude: 98.2960,
     ),
     // Heritage
     PoiItem(
@@ -366,6 +406,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.museum_rounded,
       thumbGradient: [Color(0xFF92400E), Color(0xFFB45309)],
       imagePath: 'assets/images/thalang_national_museum.jpg',
+      latitude: 8.0010,
+      longitude: 98.3360,
     ),
     // Viewpoints
     PoiItem(
@@ -376,6 +418,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.wb_sunny_rounded,
       thumbGradient: [Color(0xFFF59E0B), Color(0xFFF97316)],
       imagePath: 'assets/images/promthep_cape.jpg',
+      latitude: 7.7625,
+      longitude: 98.3050,
     ),
     PoiItem(
       name: 'Karon Viewpoint',
@@ -385,6 +429,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.landscape_rounded,
       thumbGradient: [Color(0xFF0EA5E9), Color(0xFF2563EB)],
       imagePath: 'assets/images/karon_viewpoint.jpg',
+      latitude: 7.8076,
+      longitude: 98.3050,
     ),
     // Attraction + Shopping
     PoiItem(
@@ -395,6 +441,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.set_meal_rounded,
       thumbGradient: [Color(0xFF06B6D4), Color(0xFF0891B2)],
       imagePath: 'assets/images/phuket_aquarium.jpg',
+      latitude: 7.8160,
+      longitude: 98.4030,
     ),
     PoiItem(
       name: 'Jungceylon',
@@ -404,6 +452,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       thumbIcon: Icons.shopping_bag_rounded,
       thumbGradient: [Color(0xFF475569), Color(0xFF64748B)],
       imagePath: 'assets/images/jungceylon.jpg',
+      latitude: 7.8920,
+      longitude: 98.2970,
     ),
   ];
 
@@ -666,6 +716,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
 
   Future<void> _onGenerate() async {
     final checked = _checkedPois;
+    debugPrint('CHECKED COORDS: ${checked.map((p) => "${p.name}=${p.latitude},${p.longitude}").toList()}');
     if (checked.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1558,56 +1609,68 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
                   color: AppColors.oceanDeep.withOpacity(0.05),
                   borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.schedule_rounded, size: 14, color: AppColors.oceanDeep),
-                    const SizedBox(width: 6),
-                    Text('Stay duration:', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.text2)),
-                    const Spacer(),
-                    ...[30, 60, 90, 120].map((mins) {
-                      final isSelected = poi.stayMinutes == mins;
-                      final label = mins < 60
-                          ? '${mins}m'
-                          : '${mins ~/ 60}h${mins % 60 > 0 ? " ${mins % 60}m" : ""}';
-                      return GestureDetector(
-                        onTap: () => setState(() => poi.stayMinutes = mins),
-                        child: Container(
-                          margin: const EdgeInsets.only(left: 4),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isSelected ? AppColors.oceanDeep : AppColors.surface,
-                            borderRadius: BorderRadius.circular(AppRadius.full),
-                            border: Border.all(
-                              color: isSelected ? AppColors.oceanDeep : AppColors.border,
+                    Row(
+                      children: [
+                        const Icon(Icons.schedule_rounded, size: 14, color: AppColors.oceanDeep),
+                        const SizedBox(width: 6),
+                        Text('Stay duration:', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.text2)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          ...[30, 60, 90, 120].map((mins) {
+                            final isSelected = poi.stayMinutes == mins;
+                            final label = mins < 60
+                                ? '${mins}m'
+                                : '${mins ~/ 60}h${mins % 60 > 0 ? " ${mins % 60}m" : ""}';
+                            return GestureDetector(
+                              onTap: () => setState(() => poi.stayMinutes = mins),
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? AppColors.oceanDeep : AppColors.surface,
+                                  borderRadius: BorderRadius.circular(AppRadius.full),
+                                  border: Border.all(
+                                    color: isSelected ? AppColors.oceanDeep : AppColors.border,
+                                  ),
+                                ),
+                                child: Text(
+                                  label,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: isSelected ? Colors.white : AppColors.text2,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                          GestureDetector(
+                            onTap: () => _showCustomDurationSheet(poi),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: ![30, 60, 90, 120].contains(poi.stayMinutes) ? AppColors.oceanDeep : AppColors.surface,
+                                borderRadius: BorderRadius.circular(AppRadius.full),
+                                border: Border.all(color: ![30, 60, 90, 120].contains(poi.stayMinutes) ? AppColors.oceanDeep : AppColors.border),
+                              ),
+                              child: Text(
+                                ![30, 60, 90, 120].contains(poi.stayMinutes) ? '${poi.stayMinutes}m' : 'Other',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 10, fontWeight: FontWeight.w700,
+                                  color: ![30, 60, 90, 120].contains(poi.stayMinutes) ? Colors.white : AppColors.text2),
+                              ),
                             ),
                           ),
-                          child: Text(
-                            label,
-                            style: GoogleFonts.outfit(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: isSelected ? Colors.white : AppColors.text2,
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                    GestureDetector(
-                      onTap: () => _showCustomDurationSheet(poi),
-                      child: Container(
-                        margin: const EdgeInsets.only(left: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: ![30, 60, 90, 120].contains(poi.stayMinutes) ? AppColors.oceanDeep : AppColors.surface,
-                          borderRadius: BorderRadius.circular(AppRadius.full),
-                          border: Border.all(color: ![30, 60, 90, 120].contains(poi.stayMinutes) ? AppColors.oceanDeep : AppColors.border),
-                        ),
-                        child: Text(
-                          ![30, 60, 90, 120].contains(poi.stayMinutes) ? '${poi.stayMinutes}m' : 'Other',
-                          style: GoogleFonts.outfit(
-                            fontSize: 10, fontWeight: FontWeight.w700,
-                            color: ![30, 60, 90, 120].contains(poi.stayMinutes) ? Colors.white : AppColors.text2),
-                        ),
+                        ],
                       ),
                     ),
                   ],

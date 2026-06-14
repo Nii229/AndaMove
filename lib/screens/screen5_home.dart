@@ -17,6 +17,9 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../app_store.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/app_bottom_nav.dart';
+import 'dart:ui' show ImageFilter;
+import 'package:flutter/rendering.dart' show ScrollDirection;
 
 // ══════════════════════════════════════════════════════════════
 // COLOR TOKENS
@@ -159,6 +162,9 @@ class _HomeScreenState extends State<HomeScreen>
   List<_PoiCard> _firestorePois = [];
   bool _poisLoaded = false;
 
+  final ScrollController _scrollCtrl = ScrollController();
+  bool _headerVisible = true;
+
   // ADD this method inside _HomeScreenState (e.g. after _searchQuery declarations):
   void _onStoreUpdate() => setState(() {});
 
@@ -200,7 +206,10 @@ class _HomeScreenState extends State<HomeScreen>
           category: category,
           rating: (d['rating'] as num?)?.toDouble() ?? 0.0,
           description: d['description'] as String? ?? '',
-          longDescription: d['longDescription'] as String? ?? d['description'] as String? ?? '',
+          longDescription:
+              d['longDescription'] as String? ??
+              d['description'] as String? ??
+              '',
           openHours: d['openHours'] as String? ?? '',
           estimatedTime: d['estimatedTime'] as String? ?? '',
           priceRange: d['priceRange'] as String? ?? 'Free',
@@ -226,35 +235,59 @@ class _HomeScreenState extends State<HomeScreen>
 
   static IconData _iconForCategory(String category) {
     switch (category.toLowerCase()) {
-      case 'beach': return Icons.beach_access_rounded;
-      case 'temple': return Icons.temple_buddhist_rounded;
-      case 'nature': return Icons.forest_rounded;
-      case 'culture': return Icons.account_balance_rounded;
-      case 'food': return Icons.restaurant_rounded;
-      case 'adventure': return Icons.surfing_rounded;
-      case 'nightlife': return Icons.nightlife_rounded;
-      case 'heritage': return Icons.location_city_rounded;
-      case 'viewpoint': return Icons.landscape_rounded;
-      case 'attraction': return Icons.attractions_rounded;
-      case 'shopping': return Icons.shopping_bag_rounded;
-      default: return Icons.place_rounded;
+      case 'beach':
+        return Icons.beach_access_rounded;
+      case 'temple':
+        return Icons.temple_buddhist_rounded;
+      case 'nature':
+        return Icons.forest_rounded;
+      case 'culture':
+        return Icons.account_balance_rounded;
+      case 'food':
+        return Icons.restaurant_rounded;
+      case 'adventure':
+        return Icons.surfing_rounded;
+      case 'nightlife':
+        return Icons.nightlife_rounded;
+      case 'heritage':
+        return Icons.location_city_rounded;
+      case 'viewpoint':
+        return Icons.landscape_rounded;
+      case 'attraction':
+        return Icons.attractions_rounded;
+      case 'shopping':
+        return Icons.shopping_bag_rounded;
+      default:
+        return Icons.place_rounded;
     }
   }
 
   static List<Color> _colorsForCategory(String category) {
     switch (category.toLowerCase()) {
-      case 'beach': return const [Color(0xFF0A7FAB), Color(0xFF38BDF8), Color(0xFF93C5FD)];
-      case 'temple': return const [Color(0xFFFBBF24), Color(0xFFF59E0B), Color(0xFFFDE68A)];
-      case 'nature': return const [Color(0xFF16A34A), Color(0xFF22C55E), Color(0xFF86EFAC)];
-      case 'culture': return const [Color(0xFF8B4513), Color(0xFFC8912E), Color(0xFFF0C060)];
-      case 'food': return const [Color(0xFFE8634C), Color(0xFFF97316), Color(0xFFFED7AA)];
-      case 'adventure': return const [Color(0xFF0369A1), Color(0xFF0EA5E9), Color(0xFF7DD3FC)];
-      case 'nightlife': return const [Color(0xFF7C3AED), Color(0xFFDB2777), Color(0xFFF472B6)];
-      case 'heritage': return const [Color(0xFF92400E), Color(0xFFB45309), Color(0xFFFDE68A)];
-      case 'viewpoint': return const [Color(0xFFF59E0B), Color(0xFFF97316), Color(0xFFFB7185)];
-      case 'attraction': return const [Color(0xFF06B6D4), Color(0xFF0891B2), Color(0xFF67E8F9)];
-      case 'shopping': return const [Color(0xFF475569), Color(0xFF64748B), Color(0xFFCBD5E1)];
-      default: return const [Color(0xFF0A7FAB), Color(0xFF1AAECF), Color(0xFF7DD8EF)];
+      case 'beach':
+        return const [Color(0xFF0A7FAB), Color(0xFF38BDF8), Color(0xFF93C5FD)];
+      case 'temple':
+        return const [Color(0xFFFBBF24), Color(0xFFF59E0B), Color(0xFFFDE68A)];
+      case 'nature':
+        return const [Color(0xFF16A34A), Color(0xFF22C55E), Color(0xFF86EFAC)];
+      case 'culture':
+        return const [Color(0xFF8B4513), Color(0xFFC8912E), Color(0xFFF0C060)];
+      case 'food':
+        return const [Color(0xFFE8634C), Color(0xFFF97316), Color(0xFFFED7AA)];
+      case 'adventure':
+        return const [Color(0xFF0369A1), Color(0xFF0EA5E9), Color(0xFF7DD3FC)];
+      case 'nightlife':
+        return const [Color(0xFF7C3AED), Color(0xFFDB2777), Color(0xFFF472B6)];
+      case 'heritage':
+        return const [Color(0xFF92400E), Color(0xFFB45309), Color(0xFFFDE68A)];
+      case 'viewpoint':
+        return const [Color(0xFFF59E0B), Color(0xFFF97316), Color(0xFFFB7185)];
+      case 'attraction':
+        return const [Color(0xFF06B6D4), Color(0xFF0891B2), Color(0xFF67E8F9)];
+      case 'shopping':
+        return const [Color(0xFF475569), Color(0xFF64748B), Color(0xFFCBD5E1)];
+      default:
+        return const [Color(0xFF0A7FAB), Color(0xFF1AAECF), Color(0xFF7DD8EF)];
     }
   }
 
@@ -301,23 +334,44 @@ class _HomeScreenState extends State<HomeScreen>
       'mangrove': (Color(0xFFEAF8FD), Color(0xFF0A7FAB)),
     };
     final lower = tag.toLowerCase();
-    final c = colors[lower] ?? (const Color(0xFFEAF8FD), const Color(0xFF0A7FAB));
+    final c =
+        colors[lower] ?? (const Color(0xFFEAF8FD), const Color(0xFF0A7FAB));
     return _PoiTag(tag, c.$1, c.$2);
   }
 
   static (Color, Color) _getTagColors(String tag) {
     switch (tag.toLowerCase()) {
-      case 'beach': case 'popular': case 'must see': case 'must do':
-      case 'hidden gem': case 'scenic': case 'viewpoint': case 'indoor':
+      case 'beach':
+      case 'popular':
+      case 'must see':
+      case 'must do':
+      case 'hidden gem':
+      case 'scenic':
+      case 'viewpoint':
+      case 'indoor':
         return (const Color(0xFFEAF8FD), const Color(0xFF0A7FAB));
-      case 'nature': case 'peaceful': case 'wildlife': case 'outdoor':
-      case 'family': case 'ethical':
+      case 'nature':
+      case 'peaceful':
+      case 'wildlife':
+      case 'outdoor':
+      case 'family':
+      case 'ethical':
         return (const Color(0xFFEEF5EE), const Color(0xFF16A34A));
-      case 'culture': case 'temple': case 'upscale': case 'heritage':
-      case 'sunset': case 'fine dining': case 'luxury':
+      case 'culture':
+      case 'temple':
+      case 'upscale':
+      case 'heritage':
+      case 'sunset':
+      case 'fine dining':
+      case 'luxury':
         return (const Color(0xFFFDF5E7), const Color(0xFFC8912E));
-      case 'food': case 'seafood': case 'nightlife': case 'adventure':
-      case 'shopping': case 'club': case 'thrill':
+      case 'food':
+      case 'seafood':
+      case 'nightlife':
+      case 'adventure':
+      case 'shopping':
+      case 'club':
+      case 'thrill':
         return (const Color(0xFFFDF0EE), const Color(0xFFE8634C));
       default:
         return (const Color(0xFFEAF8FD), const Color(0xFF0A7FAB));
@@ -344,55 +398,155 @@ class _HomeScreenState extends State<HomeScreen>
 
         IconData icon;
         switch (category.toLowerCase()) {
-          case 'beach': icon = Icons.beach_access_rounded; break;
-          case 'temple': icon = Icons.temple_buddhist_rounded; break;
-          case 'nature': icon = Icons.forest_rounded; break;
-          case 'culture': icon = Icons.account_balance_rounded; break;
-          case 'food': icon = Icons.restaurant_rounded; break;
-          case 'adventure': icon = Icons.surfing_rounded; break;
-          case 'nightlife': icon = Icons.nightlife_rounded; break;
-          case 'heritage': icon = Icons.location_city_rounded; break;
-          case 'viewpoint': icon = Icons.landscape_rounded; break;
-          case 'attraction': icon = Icons.attractions_rounded; break;
-          case 'shopping': icon = Icons.shopping_bag_rounded; break;
-          default: icon = Icons.place_rounded;
+          case 'beach':
+            icon = Icons.beach_access_rounded;
+            break;
+          case 'temple':
+            icon = Icons.temple_buddhist_rounded;
+            break;
+          case 'nature':
+            icon = Icons.forest_rounded;
+            break;
+          case 'culture':
+            icon = Icons.account_balance_rounded;
+            break;
+          case 'food':
+            icon = Icons.restaurant_rounded;
+            break;
+          case 'adventure':
+            icon = Icons.surfing_rounded;
+            break;
+          case 'nightlife':
+            icon = Icons.nightlife_rounded;
+            break;
+          case 'heritage':
+            icon = Icons.location_city_rounded;
+            break;
+          case 'viewpoint':
+            icon = Icons.landscape_rounded;
+            break;
+          case 'attraction':
+            icon = Icons.attractions_rounded;
+            break;
+          case 'shopping':
+            icon = Icons.shopping_bag_rounded;
+            break;
+          default:
+            icon = Icons.place_rounded;
         }
 
         List<Color> gradColors;
         switch (category.toLowerCase()) {
-          case 'beach': gradColors = const [Color(0xFF0A7FAB), Color(0xFF38BDF8), Color(0xFF93C5FD)]; break;
-          case 'temple': gradColors = const [Color(0xFFFBBF24), Color(0xFFF59E0B), Color(0xFFFDE68A)]; break;
-          case 'nature': gradColors = const [Color(0xFF16A34A), Color(0xFF22C55E), Color(0xFF86EFAC)]; break;
-          case 'culture': gradColors = const [Color(0xFF7C3AED), Color(0xFFA855F7), Color(0xFFE9D5FF)]; break;
-          case 'food': gradColors = const [Color(0xFFE8634C), Color(0xFFF97316), Color(0xFFFED7AA)]; break;
-          case 'adventure': gradColors = const [Color(0xFF166534), Color(0xFF16A34A), Color(0xFF86EFAC)]; break;
-          case 'nightlife': gradColors = const [Color(0xFF7C3AED), Color(0xFFDB2777), Color(0xFFF472B6)]; break;
-          case 'heritage': gradColors = const [Color(0xFF92400E), Color(0xFFB45309), Color(0xFFFDE68A)]; break;
-          case 'viewpoint': gradColors = const [Color(0xFFF59E0B), Color(0xFFF97316), Color(0xFFFB7185)]; break;
-          case 'attraction': gradColors = const [Color(0xFF06B6D4), Color(0xFF0891B2), Color(0xFF67E8F9)]; break;
-          case 'shopping': gradColors = const [Color(0xFF475569), Color(0xFF64748B), Color(0xFFCBD5E1)]; break;
-          default: gradColors = const [Color(0xFF0A7FAB), Color(0xFF1AAECF), Color(0xFF7DD8EF)];
+          case 'beach':
+            gradColors = const [
+              Color(0xFF0A7FAB),
+              Color(0xFF38BDF8),
+              Color(0xFF93C5FD),
+            ];
+            break;
+          case 'temple':
+            gradColors = const [
+              Color(0xFFFBBF24),
+              Color(0xFFF59E0B),
+              Color(0xFFFDE68A),
+            ];
+            break;
+          case 'nature':
+            gradColors = const [
+              Color(0xFF16A34A),
+              Color(0xFF22C55E),
+              Color(0xFF86EFAC),
+            ];
+            break;
+          case 'culture':
+            gradColors = const [
+              Color(0xFF7C3AED),
+              Color(0xFFA855F7),
+              Color(0xFFE9D5FF),
+            ];
+            break;
+          case 'food':
+            gradColors = const [
+              Color(0xFFE8634C),
+              Color(0xFFF97316),
+              Color(0xFFFED7AA),
+            ];
+            break;
+          case 'adventure':
+            gradColors = const [
+              Color(0xFF166534),
+              Color(0xFF16A34A),
+              Color(0xFF86EFAC),
+            ];
+            break;
+          case 'nightlife':
+            gradColors = const [
+              Color(0xFF7C3AED),
+              Color(0xFFDB2777),
+              Color(0xFFF472B6),
+            ];
+            break;
+          case 'heritage':
+            gradColors = const [
+              Color(0xFF92400E),
+              Color(0xFFB45309),
+              Color(0xFFFDE68A),
+            ];
+            break;
+          case 'viewpoint':
+            gradColors = const [
+              Color(0xFFF59E0B),
+              Color(0xFFF97316),
+              Color(0xFFFB7185),
+            ];
+            break;
+          case 'attraction':
+            gradColors = const [
+              Color(0xFF06B6D4),
+              Color(0xFF0891B2),
+              Color(0xFF67E8F9),
+            ];
+            break;
+          case 'shopping':
+            gradColors = const [
+              Color(0xFF475569),
+              Color(0xFF64748B),
+              Color(0xFFCBD5E1),
+            ];
+            break;
+          default:
+            gradColors = const [
+              Color(0xFF0A7FAB),
+              Color(0xFF1AAECF),
+              Color(0xFF7DD8EF),
+            ];
         }
 
-        final (tagBg, tagFg) = _getTagColors(d['tagLabel'] as String? ?? category);
+        final (tagBg, tagFg) = _getTagColors(
+          d['tagLabel'] as String? ?? category,
+        );
 
-        AppStore.savedPois.add(SavedPoiSummary(
-          name: d['name'] as String? ?? '',
-          location: d['location'] as String? ?? '',
-          category: category,
-          rating: (d['rating'] as num?)?.toDouble() ?? 0.0,
-          description: d['description'] as String? ?? '',
-          openHours: d['openHours'] as String? ?? '',
-          estimatedTime: d['estimatedTime'] as String? ?? '',
-          priceRange: d['priceRange'] as String? ?? 'Free',
-          gradientColors: gradColors,
-          icon: icon,
-          tagLabel: d['tagLabel'] as String? ?? category,
-          tagBg: tagBg,
-          tagFg: tagFg,
-          imagePath: d['imagePath'] as String? ?? '',
-          longDescription: d['longDescription'] as String? ?? '',
-        ));
+        AppStore.savedPois.add(
+          SavedPoiSummary(
+            name: d['name'] as String? ?? '',
+            location: d['location'] as String? ?? '',
+            category: category,
+            rating: (d['rating'] as num?)?.toDouble() ?? 0.0,
+            description: d['description'] as String? ?? '',
+            openHours: d['openHours'] as String? ?? '',
+            estimatedTime: d['estimatedTime'] as String? ?? '',
+            priceRange: d['priceRange'] as String? ?? 'Free',
+            gradientColors: gradColors,
+            icon: icon,
+            tagLabel: d['tagLabel'] as String? ?? category,
+            tagBg: tagBg,
+            tagFg: tagFg,
+            imagePath: d['imagePath'] as String? ?? '',
+            longDescription: d['longDescription'] as String? ?? '',
+            latitude: (d['latitude'] as num?)?.toDouble() ?? 0.0,
+            longitude: (d['longitude'] as num?)?.toDouble() ?? 0.0,
+          ),
+        );
       }
 
       if (mounted) setState(() {});
@@ -488,6 +642,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Beach', AppColors.oceanTint, AppColors.oceanDeep),
         _PoiTag('Nature', Color(0xFFEEF5EE), Color(0xFF16A34A)),
       ],
+      latitude: 7.8196,
+      longitude: 98.2986,
     ),
     _PoiCard(
       name: 'Patong Beach',
@@ -512,6 +668,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Popular', AppColors.oceanTint, AppColors.oceanDeep),
         _PoiTag('Nightlife', AppColors.coralTint, AppColors.coral),
       ],
+      latitude: 7.9036,
+      longitude: 98.2969,
     ),
     _PoiCard(
       name: 'Freedom Beach',
@@ -536,6 +694,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Hidden Gem', AppColors.oceanTint, AppColors.oceanDeep),
         _PoiTag('Nature', Color(0xFFEEF5EE), Color(0xFF16A34A)),
       ],
+      latitude: 7.8921,
+      longitude: 98.2788,
     ),
     _PoiCard(
       name: 'Surin Beach',
@@ -560,6 +720,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Beach', AppColors.oceanTint, AppColors.oceanDeep),
         _PoiTag('Upscale', AppColors.goldTint, AppColors.gold),
       ],
+      latitude: 7.9736,
+      longitude: 98.2800,
     ),
     _PoiCard(
       name: 'Nai Harn Beach',
@@ -585,6 +747,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Peaceful', Color(0xFFEEF5EE), Color(0xFF16A34A)),
         _PoiTag('Scenic', AppColors.oceanTint, AppColors.oceanDeep),
       ],
+      latitude: 7.7814,
+      longitude: 98.3018,
     ),
 
     // ── TEMPLES ─────────────────────────────────────────────
@@ -612,6 +776,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Must See', AppColors.oceanTint, AppColors.oceanDeep),
         _PoiTag('Culture', AppColors.goldTint, AppColors.gold),
       ],
+      latitude: 7.8273,
+      longitude: 98.3090,
     ),
     _PoiCard(
       name: 'Wat Chalong',
@@ -636,6 +802,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Temple', AppColors.goldTint, AppColors.gold),
         _PoiTag('Culture', AppColors.coralTint, AppColors.coral),
       ],
+      latitude: 7.8453,
+      longitude: 98.3371,
     ),
 
     // ── NATURE ──────────────────────────────────────────────
@@ -663,6 +831,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Nature', Color(0xFFEEF5EE), Color(0xFF16A34A)),
         _PoiTag('Ethical', AppColors.oceanTint, AppColors.oceanDeep),
       ],
+      latitude: 8.0233,
+      longitude: 98.3636,
     ),
     _PoiCard(
       name: 'Sirinat National Park',
@@ -687,6 +857,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Nature', Color(0xFFEEF5EE), Color(0xFF16A34A)),
         _PoiTag('Relax', AppColors.oceanTint, AppColors.oceanDeep),
       ],
+      latitude: 8.1310,
+      longitude: 98.2937,
     ),
     _PoiCard(
       name: 'Koh Sirey',
@@ -711,6 +883,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Nature', Color(0xFFEEF5EE), Color(0xFF16A34A)),
         _PoiTag('Mangrove', AppColors.oceanTint, AppColors.oceanDeep),
       ],
+      latitude: 7.8921,
+      longitude: 98.4260,
     ),
 
     // ── CULTURE ─────────────────────────────────────────────
@@ -737,6 +911,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Heritage', AppColors.coralTint, AppColors.coral),
         _PoiTag('Food', AppColors.goldTint, AppColors.gold),
       ],
+      latitude: 7.8838,
+      longitude: 98.3920,
     ),
     _PoiCard(
       name: 'Phuket Fantasea',
@@ -761,6 +937,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Show', AppColors.coralTint, AppColors.coral),
         _PoiTag('Culture', AppColors.goldTint, AppColors.gold),
       ],
+      latitude: 7.9600,
+      longitude: 98.2750,
     ),
 
     // ── FOOD ────────────────────────────────────────────────
@@ -787,6 +965,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Seafood', AppColors.coralTint, AppColors.coral),
         _PoiTag('Local', AppColors.goldTint, AppColors.gold),
       ],
+      latitude: 7.7849,
+      longitude: 98.3356,
     ),
     _PoiCard(
       name: 'Phuket Town Walking Street',
@@ -811,6 +991,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Street Food', AppColors.coralTint, AppColors.coral),
         _PoiTag('Market', AppColors.goldTint, AppColors.gold),
       ],
+      latitude: 7.8847,
+      longitude: 98.3933,
     ),
     _PoiCard(
       name: 'Blue Elephant Restaurant',
@@ -835,6 +1017,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Fine Dining', AppColors.goldTint, AppColors.gold),
         _PoiTag('Thai', AppColors.coralTint, AppColors.coral),
       ],
+      latitude: 7.8846,
+      longitude: 98.3939,
     ),
 
     // ── ADVENTURE ───────────────────────────────────────────
@@ -861,6 +1045,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Adventure', AppColors.coralTint, AppColors.coral),
         _PoiTag('Wildlife', Color(0xFFEEF5EE), Color(0xFF16A34A)),
       ],
+      latitude: 7.9260,
+      longitude: 98.3307,
     ),
     _PoiCard(
       name: 'ATV & Zipline Tour',
@@ -885,6 +1071,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Thrill', AppColors.coralTint, AppColors.coral),
         _PoiTag('Outdoor', Color(0xFFEEF5EE), Color(0xFF16A34A)),
       ],
+      latitude: 7.9180,
+      longitude: 98.3200,
     ),
     _PoiCard(
       name: 'Phi Phi Islands Day Trip',
@@ -910,6 +1098,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Must Do', AppColors.oceanTint, AppColors.oceanDeep),
         _PoiTag('Snorkel', Color(0xFFEEF5EE), Color(0xFF16A34A)),
       ],
+      latitude: 7.9041,
+      longitude: 98.4243,
     ),
 
     // ── NIGHTLIFE ───────────────────────────────────────────
@@ -936,6 +1126,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Nightlife', AppColors.coralTint, AppColors.coral),
         _PoiTag('Popular', AppColors.goldTint, AppColors.gold),
       ],
+      latitude: 7.8940,
+      longitude: 98.2968,
     ),
     _PoiCard(
       name: 'Illuzion Club',
@@ -960,6 +1152,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Club', AppColors.coralTint, AppColors.coral),
         _PoiTag('Music', Color(0xFFEDE9FE), Color(0xFF7C3AED)),
       ],
+      latitude: 7.8941,
+      longitude: 98.2969,
     ),
 
     // ── HERITAGE ────────────────────────────────────────────
@@ -986,6 +1180,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('History', AppColors.goldTint, AppColors.gold),
         _PoiTag('Museum', AppColors.coralTint, AppColors.coral),
       ],
+      latitude: 8.0137,
+      longitude: 98.3256,
     ),
 
     // ── VIEWPOINTS ──────────────────────────────────────────
@@ -1013,6 +1209,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Sunset', AppColors.goldTint, AppColors.gold),
         _PoiTag('Viewpoint', AppColors.oceanTint, AppColors.oceanDeep),
       ],
+      latitude: 7.7696,
+      longitude: 98.3034,
     ),
     _PoiCard(
       name: 'Karon Viewpoint',
@@ -1037,6 +1235,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Viewpoint', AppColors.oceanTint, AppColors.oceanDeep),
         _PoiTag('Scenic', AppColors.goldTint, AppColors.gold),
       ],
+      latitude: 7.8296,
+      longitude: 98.2975,
     ),
 
     // ── ATTRACTIONS ─────────────────────────────────────────
@@ -1063,6 +1263,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Family', Color(0xFFEEF5EE), Color(0xFF16A34A)),
         _PoiTag('Indoor', AppColors.oceanTint, AppColors.oceanDeep),
       ],
+      latitude: 7.8449,
+      longitude: 98.4091,
     ),
 
     // ── SHOPPING ────────────────────────────────────────────
@@ -1089,6 +1291,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Shopping', AppColors.coralTint, AppColors.coral),
         _PoiTag('Indoor', AppColors.oceanTint, AppColors.oceanDeep),
       ],
+      latitude: 7.8942,
+      longitude: 98.2991,
     ),
     _PoiCard(
       name: 'Central Festival Phuket',
@@ -1113,6 +1317,8 @@ class _HomeScreenState extends State<HomeScreen>
         _PoiTag('Shopping', AppColors.coralTint, AppColors.coral),
         _PoiTag('Luxury', AppColors.goldTint, AppColors.gold),
       ],
+      latitude: 7.9041,
+      longitude: 98.3693,
     ),
   ];
 
@@ -1121,7 +1327,8 @@ class _HomeScreenState extends State<HomeScreen>
     final sourcePois = _firestorePois.isNotEmpty ? _firestorePois : _poiCards;
     final highRated = sourcePois.where((c) => c.rating >= 4.5).toList();
     // Shuffle based on week number so it changes weekly but stays consistent
-    final weekNumber = DateTime.now().millisecondsSinceEpoch ~/ (7 * 24 * 60 * 60 * 1000);
+    final weekNumber =
+        DateTime.now().millisecondsSinceEpoch ~/ (7 * 24 * 60 * 60 * 1000);
     highRated.shuffle(Random(weekNumber));
     return highRated.take(5).toList();
   }
@@ -1157,10 +1364,20 @@ class _HomeScreenState extends State<HomeScreen>
     }).toList();
   }
 
+  bool _onUserScroll(UserScrollNotification n) {
+    if (n.direction == ScrollDirection.reverse && _headerVisible) {
+      setState(() => _headerVisible = false);
+    } else if (n.direction == ScrollDirection.forward && !_headerVisible) {
+      setState(() => _headerVisible = true);
+    }
+    return false;
+  }
+
   @override
   void dispose() {
     AppStore.removeListener(_onStoreUpdate);
     _searchCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -1169,43 +1386,61 @@ class _HomeScreenState extends State<HomeScreen>
   // ══════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
+    final headerSpacer = MediaQuery.of(context).padding.top + 89.0;
+
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(
         children: [
-          Column(
-            children: [
-              _buildAppHeader(),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.only(bottom: 100),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildGreetingBanner(),
-                      _buildWeatherStrip(),
-                      _buildSearchBar(),
-                      _buildSectionHeader('Phuket Tips', null),
-                      _buildTravelTips(),
-                      _buildSectionHeader('Trending This Week', null),
-                      _buildTrendingStrip(),
-                      _buildSectionHeader('Popular Attractions', null),
-                      _buildCategoryChips(),
-                      const SizedBox(height: 12),
-                      _buildPoiVerticalList(),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
+          Positioned.fill(
+            child: NotificationListener<UserScrollNotification>(
+              onNotification: _onUserScroll,
+              child: SingleChildScrollView(
+                controller: _scrollCtrl,
+                padding: const EdgeInsets.only(bottom: 100),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(height: headerSpacer),
+                    _buildGreetingBanner(),
+                    _buildWeatherStrip(),
+                    _buildSearchBar(),
+                    _buildSectionHeader('Phuket Tips', null),
+                    _buildTravelTips(),
+                    _buildSectionHeader('Trending This Week', null),
+                    _buildTrendingStrip(),
+                    _buildSectionHeader('Popular Attractions', null),
+                    _buildCategoryChips(),
+                    const SizedBox(height: 12),
+                    _buildPoiVerticalList(),
+                    const SizedBox(height: 8),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
-          Positioned(bottom: 0, left: 0, right: 0, child: _buildBottomNav()),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AnimatedSlide(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOut,
+              offset: _headerVisible ? Offset.zero : const Offset(0, -1),
+              child: _buildAppHeader(),
+            ),
+          ),
+          const Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: AppBottomNav(currentIndex: 0),
+          ),
         ],
       ),
     );
   }
-
+  
   // ══════════════════════════════════════════════════════════
   // APP HEADER
   // ══════════════════════════════════════════════════════════
@@ -1545,40 +1780,44 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                text: '${stats.tempC}°',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.text1,
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          RichText(
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: '${stats.tempC}°',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.text1,
+                                  ),
                                 ),
-                              ),
-                              TextSpan(
-                                text: 'C',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.text2,
+                                TextSpan(
+                                  text: 'C',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.text2,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        Text(
-                          stats.conditionLabel,
-                          style: GoogleFonts.outfit(
-                            fontSize: 10.5,
-                            color: AppColors.text2,
-                            fontWeight: FontWeight.w500,
+                          Text(
+                            stats.conditionLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.outfit(
+                              fontSize: 10.5,
+                              color: AppColors.text2,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -1633,6 +1872,9 @@ class _HomeScreenState extends State<HomeScreen>
         const SizedBox(height: 3),
         Text(
           value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
           style: GoogleFonts.outfit(
             fontSize: 11,
             fontWeight: FontWeight.w700,
@@ -1641,6 +1883,9 @@ class _HomeScreenState extends State<HomeScreen>
         ),
         Text(
           label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
           style: GoogleFonts.outfit(fontSize: 9.5, color: AppColors.text3),
         ),
       ],
@@ -2531,10 +2776,16 @@ class _HomeScreenState extends State<HomeScreen>
       gradientColors: card.gradientColors,
       icon: card.placeholderIcon,
       tagLabel: card.tags.isNotEmpty ? card.tags.first.label : card.category,
-      tagBg: card.tags.isNotEmpty ? card.tags.first.bg : const Color(0xFFEAF8FD),
-      tagFg: card.tags.isNotEmpty ? card.tags.first.fg : const Color(0xFF0A7FAB),
+      tagBg: card.tags.isNotEmpty
+          ? card.tags.first.bg
+          : const Color(0xFFEAF8FD),
+      tagFg: card.tags.isNotEmpty
+          ? card.tags.first.fg
+          : const Color(0xFF0A7FAB),
       imagePath: card.imagePath,
       longDescription: card.longDescription,
+      latitude: card.latitude,
+      longitude: card.longitude,
     );
 
     AppStore.togglePoi(poi);
@@ -2542,7 +2793,10 @@ class _HomeScreenState extends State<HomeScreen>
     // Sync to Firestore (fire-and-forget)
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final docId = card.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_').replaceAll(RegExp(r'^_+|_+$'), '');
+      final docId = card.name
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
       final ref = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -2561,8 +2815,12 @@ class _HomeScreenState extends State<HomeScreen>
           'estimatedTime': card.estimatedTime,
           'priceRange': card.priceRange,
           'imagePath': card.imagePath,
-          'tagLabel': card.tags.isNotEmpty ? card.tags.first.label : card.category,
+          'tagLabel': card.tags.isNotEmpty
+              ? card.tags.first.label
+              : card.category,
           'longDescription': card.longDescription,
+          'latitude': card.latitude,
+          'longitude': card.longitude,
           'savedAt': FieldValue.serverTimestamp(),
         });
       } else {
@@ -2624,58 +2882,61 @@ class _HomeScreenState extends State<HomeScreen>
           boxShadow: shadowLg,
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            _navItem(0, Icons.home_rounded, 'Home'),
-            _navItem(1, Icons.explore_rounded, 'Explore'),
+            Expanded(child: _navItem(0, Icons.home_rounded, 'Home')),
+            Expanded(child: _navItem(1, Icons.explore_rounded, 'Explore')),
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Transform.translate(
-                  offset: const Offset(0, -22),
-                  child: GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const GenerateItineraryScreen(),
-                      ),
-                    ),
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [AppColors.oceanDeep, AppColors.oceanMid],
+                  offset: const Offset(0, -18),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const GenerateItineraryScreen(),
+                          ),
                         ),
-                        boxShadow: shadowOcean,
+                        child: Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [AppColors.oceanDeep, AppColors.oceanMid],
+                            ),
+                            boxShadow: shadowOcean,
+                          ),
+                          child: const Icon(
+                            Icons.add_rounded,
+                            size: 24,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.add_rounded,
-                        size: 24,
-                        color: Colors.white,
+                      const SizedBox(height: 3),
+                      Text(
+                        'PLAN',
+                        style: GoogleFonts.outfit(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                          color: AppColors.oceanDeep,
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-                Transform.translate(
-                  offset: const Offset(0, -22),
-                  child: Text(
-                    'PLAN',
-                    style: GoogleFonts.outfit(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
-                      color: AppColors.oceanDeep,
-                    ),
+                    ],
                   ),
                 ),
               ],
             ),
-            _navItem(3, Icons.map_rounded, 'Trips'),
-            _navItem(4, Icons.person_rounded, 'Profile'),
+            Expanded(child: _navItem(3, Icons.map_rounded, 'Trips')),
+            Expanded(child: _navItem(4, Icons.person_rounded, 'Profile')),
           ],
         ),
       ),
@@ -2685,6 +2946,7 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _navItem(int index, IconData icon, String label) {
     final isActive = _selectedNav == index;
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         if (index == 0) {
           setState(() => _selectedNav = index);
@@ -2705,33 +2967,41 @@ class _HomeScreenState extends State<HomeScreen>
           );
         }
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.oceanTint : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.full),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 22,
-              color: isActive ? AppColors.oceanDeep : AppColors.text3,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: isActive ? AppColors.oceanTint : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.full),
             ),
-            const SizedBox(height: 3),
-            Text(
-              label.toUpperCase(),
-              style: GoogleFonts.outfit(
-                fontSize: 9,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.8,
-                color: isActive ? AppColors.oceanDeep : AppColors.text3,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 22,
+                  color: isActive ? AppColors.oceanDeep : AppColors.text3,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  label.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                    color: isActive ? AppColors.oceanDeep : AppColors.text3,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
