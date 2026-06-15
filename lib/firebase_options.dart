@@ -41,12 +41,12 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyC7fpFPc4feQsb3MVFqinbrKBYP2hxUpKc',
-    appId: '1:22384930715:web:a27bf2c1bfacebca48bb3e',
-    messagingSenderId: '22384930715',
-    projectId: 'andamove-cc307',
-    authDomain: 'andamove-cc307.firebaseapp.com',
-    storageBucket: 'andamove-cc307.firebasestorage.app',
+    apiKey: 'AIzaSyAntOW3RZbOmtnHW218oGQhPUKxyuH3VZA',
+    appId: '1:841490797865:web:91f077b37063a345b2d338',
+    messagingSenderId: '841490797865',
+    projectId: 'andamove-31abc',
+    authDomain: 'andamove-31abc.firebaseapp.com',
+    storageBucket: 'andamove-31abc.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
