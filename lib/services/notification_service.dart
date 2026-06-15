@@ -8,6 +8,7 @@
 // confirms an upcoming trip.
 // ============================================================
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest_all.dart' as tz;
@@ -19,6 +20,11 @@ class NotificationService {
   // ── Initialise once from main.dart ──────────────────────
   static Future<void> init() async {
     if (_initialised) return;
+    if (kIsWeb) {
+      // flutter_local_notifications is not supported on web.
+      _initialised = true;
+      return;
+    }
 
     tz.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation('Asia/Bangkok'));
@@ -34,7 +40,7 @@ class NotificationService {
     await _plugin.initialize(settings: settings);
 
     await _plugin
-        .resolvePlatformSpecificImplementation<
+        .resolvePlatformSpecificImplementation
             AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
 
@@ -49,6 +55,7 @@ class NotificationService {
     required int startHour,
     required int startMinute,
   }) async {
+    if (kIsWeb) return; // local notifications unsupported on web
     if (!_initialised) await init();
 
     final tripStart = tz.TZDateTime(
@@ -97,14 +104,14 @@ class NotificationService {
 
   // ── Cancel a previously scheduled reminder ───────────────
   static Future<void> cancelTripReminder(String tripId) async {
-    if (!_initialised) return;
+    if (kIsWeb || !_initialised) return;
     final notifId = tripId.hashCode.abs() % 100000;
     await _plugin.cancel(id: notifId);
   }
 
   // ── Cancel all scheduled reminders ───────────────────────
   static Future<void> cancelAll() async {
-    if (!_initialised) return;
+    if (kIsWeb || !_initialised) return;
     await _plugin.cancelAll();
   }
 }
