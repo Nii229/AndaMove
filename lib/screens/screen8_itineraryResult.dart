@@ -2,27 +2,26 @@
 // AndaMove — Itinerary Result Screen
 // File: lib/screens/screen8_itineraryResult.dart
 //
-// Changes vs previous version:
-//   [NEW] ItineraryViewMode enum — generated | inProgress | upcoming
-//   [NEW] viewMode parameter controls bottom CTA and back-button
-//         behaviour:
-//         • generated  → Map View + Start Navigation (unchanged)
-//         • inProgress → Map View + Start Navigation (same layout;
-//                         End Trip lives in screen10 NavigationScreen)
-//         • upcoming   → Start Trip (pushes NavigationScreen,
-//                         marks trip as inProgress via AppStore)
-//   [NEW] Header chip changes per mode:
-//         • generated  → no chip
-//         • inProgress → "Active Trip" gold chip
-//         • upcoming   → "Preview" ocean chip (existing)
-//   [CHANGED] Back button: generated → save & go to trips;
-//             inProgress/upcoming → simple Navigator.pop
-//   [CHANGED] "Edit stops" now pushes a NEW screen7 forward
-//             with current POI names pre-checked (forward flow).
-//   [REQ] AppStore must expose:
-//         • static void startTrip(String id) — adds id to
-//           inProgressTripIds and calls _notifyListeners()
-//         • static final Set<String> inProgressTripIds = {}
+// WHAT CHANGED (multi-day scheduling upgrade)
+//   The timeline is no longer a naive "start + Σ(stay+15min)" clock.
+//   It now runs ItineraryScheduler over the optimised POI list and
+//   renders a realistic, DAY-SPLIT plan:
+//     • Fix #1 — respects each POI's real opening hours
+//     • Fix #2 — auto-inserts Lunch (~12:00) + Dinner (~19:00)
+//     • Fix #3 — splits into Day 1, Day 2, … on overflow
+//     • Fix #4 — each day ends by a sane cutoff; nightlife may run late
+//
+//   • [NEW] travelMinutes constructor param — real Distance Matrix
+//           minutes from screen7, fed straight to the scheduler.
+//   • [NEW] _schedule field built in initState + on reorder.
+//   • [NEW] day headers + meal-break cards in the timeline.
+//   • Header badges (duration / stops / days) now read from the
+//     schedule, so they're truthful.
+//   • All original visuals (banner, stars, sheen, dots, connectors,
+//     stop cards, 3 CTA modes, reorder) are preserved.
+//
+//   The constructor is otherwise UNCHANGED, so screen7 / screen11 /
+//   screen10 keep calling it the same way (travelMinutes is optional).
 // ============================================================
 
 import 'dart:convert';
@@ -35,12 +34,13 @@ import 'screen9_mapView.dart';
 import 'screen10_navigation.dart';
 import 'screen11_trips.dart';
 import '../app_store.dart';
+import '../services/itinerary_scheduler.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 
 // ══════════════════════════════════════════════════════════════
-// VIEW MODE ENUM  [NEW]
+// VIEW MODE ENUM
 // ══════════════════════════════════════════════════════════════
 enum ItineraryViewMode {
   /// Normal: user just generated an itinerary from screen7.
@@ -126,8 +126,15 @@ class ItineraryResultScreen extends StatefulWidget {
   final TimeOfDay time;
   final String? tripId;
 
-  /// [NEW] Determines which bottom CTA layout to show.
+  /// Determines which bottom CTA layout to show.
   final ItineraryViewMode viewMode;
+
+  /// [NEW] Real travel minutes into each stop (parallel to
+  /// selectedPois). Optional — fallbacks (no-coords / API failure)
+  /// and screen11 re-runs omit it, and the scheduler then uses a
+  /// 15-min buffer. travelMinutes[i] = minutes into selectedPois[i];
+  /// index 0 = travel from the user's start point.
+  final List<int>? travelMinutes;
 
   const ItineraryResultScreen({
     super.key,
@@ -138,6 +145,7 @@ class ItineraryResultScreen extends StatefulWidget {
     required this.time,
     this.tripId,
     this.viewMode = ItineraryViewMode.generated,
+    this.travelMinutes,
   });
 
   @override
@@ -157,12 +165,16 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   bool _locationPermissionGranted = false;
   String? _savedTripId;
 
+  // [NEW] The computed multi-day schedule.
+  late ItinerarySchedule _schedule;
+
   @override
   void initState() {
     super.initState();
     _orderedPois = List.from(widget.selectedPois);
+    _rebuildSchedule(); // [NEW]
 
-    // FIX 3: restore active stop for in-progress trips
+    // restore active stop for in-progress trips
     _savedTripId = widget.tripId;
     if (widget.tripId != null && widget.viewMode == ItineraryViewMode.inProgress) {
       _activeStopIndex = AppStore.getTripProgress(widget.tripId!);
@@ -187,6 +199,36 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     _ensureLocationPermission();
   }
 
+  // ── [NEW] Build the schedule from the current POI order ──────
+  void _rebuildSchedule() {
+    final stops = <ScheduleStop>[];
+    for (int i = 0; i < _orderedPois.length; i++) {
+      final p = _orderedPois[i];
+      final travel = (widget.travelMinutes != null &&
+              i < widget.travelMinutes!.length)
+          ? widget.travelMinutes![i]
+          : 0; // 0 → scheduler applies its fallback buffer
+      stops.add(ScheduleStop(
+        name: p.name,
+        category: p.category,
+        imagePath: p.imagePath,
+        rating: p.rating,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        stayMinutes: p.stayMinutes,
+        travelMinutesToHere: travel,
+        openHours: p.openHours,
+        travelLabel: p.distance,
+      ));
+    }
+    _schedule = ItineraryScheduler.build(
+      stops: stops,
+      startDate: widget.date,
+      startHour: widget.time.hour,
+      startMinute: widget.time.minute,
+    );
+  }
+
   Future<void> _ensureLocationPermission() async {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -204,7 +246,6 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
         setState(() => _locationPermissionGranted = true);
       }
     } catch (e) {
-      // Permission denied or unavailable — blue dot simply won't show
       print('Location permission error: $e');
     }
   }
@@ -216,7 +257,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     super.dispose();
   }
 
-  // ── [CHANGED] Only save a new trip when in "generated" mode ──
+  // ── Only save a new trip when in "generated" mode ────────────
   void _onBackPressed() {
     if (widget.viewMode == ItineraryViewMode.generated) {
       _saveAndGoToTrips();
@@ -225,7 +266,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     }
   }
 
-  // ── Shared save logic (no navigation) — called by _ensureTripSaved ──
+  // ── Shared save logic (no navigation) ────────────────────────
   void _persistTrip(String tripId, String tripName) {
     if (!AppStore.isTripFollowed(tripId)) {
       AppStore.followTrip(
@@ -262,6 +303,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
           'latitude': p.latitude,
           'longitude': p.longitude,
           'imagePath': p.imagePath,
+          'openHours': p.openHours, // [NEW] persist hours for re-open
         }).toList();
 
         FirebaseFirestore.instance
@@ -277,6 +319,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
           'date': Timestamp.fromDate(widget.date),
           'startHour': widget.time.hour,
           'startMinute': widget.time.minute,
+          'dayCount': _schedule.totalDays, // [NEW]
           'status': 'upcoming',
           'createdAt': FieldValue.serverTimestamp(),
         });
@@ -292,7 +335,6 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     } catch (_) {}
   }
 
-  // ── Returns existing saved ID, or saves + returns a new one ──
   Future<String> _ensureTripSaved() async {
     if (_savedTripId != null) return _savedTripId!;
     final tripId = 'trip_${DateTime.now().millisecondsSinceEpoch}';
@@ -304,7 +346,6 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     return tripId;
   }
 
-  // ── Back button: save (if not done yet) then go to Trips ──
   Future<void> _saveAndGoToTrips() async {
     await _ensureTripSaved();
     if (mounted) {
@@ -316,7 +357,6 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     }
   }
 
-  // ── [NEW] Start Trip — marks upcoming as inProgress, opens nav ──
   void _onStartTrip() {
     if (widget.tripId != null) {
       AppStore.startTrip(widget.tripId!);
@@ -520,7 +560,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
 
   String _getApiKey() => 'AIzaSyB0CTGhgMeEQczyD3N1aM6ynx7hY3HO6kw';
 
-  // ── [CHANGED] Edit stops → push new screen7 with POIs, date, time, transport ──
+  // ── Edit stops → push new screen7 with POIs, date, time, transport ──
   void _onEditStops() {
     Navigator.push(
       context,
@@ -550,20 +590,16 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     return '$hour:$minute $period';
   }
 
-  TimeOfDay _timeAtStop(int index) {
-    int totalMins = widget.time.hour * 60 + widget.time.minute;
-    for (int i = 0; i < index; i++) {
-      totalMins += _orderedPois[i].stayMinutes + 15; // stay + travel buffer
-    }
-    return TimeOfDay(hour: (totalMins ~/ 60) % 24, minute: totalMins % 60);
-  }
-
-  String _formatStopTime(int index) {
-    final t      = _timeAtStop(index);
-    final hour   = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
-    final minute = t.minute.toString().padLeft(2, '0');
-    final period = t.period == DayPeriod.am ? 'AM' : 'PM';
-    return '$hour:$minute $period';
+  // [NEW] Format an absolute minutes-from-midnight value. Values
+  // ≥ 1440 (post-midnight, e.g. nightlife) wrap and show the time.
+  String _formatMinutes(int minutes) {
+    final m = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60);
+    final h24 = m ~/ 60;
+    final mm = m % 60;
+    final period = h24 < 12 ? 'AM' : 'PM';
+    var h12 = h24 % 12;
+    if (h12 == 0) h12 = 12;
+    return '$h12:${mm.toString().padLeft(2, '0')} $period';
   }
 
   IconData _transportIcon(String transport) {
@@ -576,14 +612,26 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     }
   }
 
+  // [CHANGED] Total duration now spans the whole schedule (all days):
+  // from Day 1's first start to the last day's last end, expressed as
+  // active touring time. We sum each day's (lastEnd - firstStart).
   String get _totalDuration {
-    final stayMins = _orderedPois.fold<int>(0, (acc, p) => acc + p.stayMinutes);
-    final travelMins = _orderedPois.length * 15;
-    final totalMins = stayMins + travelMins;
+    int totalMins = 0;
+    for (final day in _schedule.days) {
+      if (day.entries.isEmpty) continue;
+      totalMins += (day.lastEnd - day.firstStart);
+    }
     final h = totalMins ~/ 60;
     final m = totalMins % 60;
+    if (h == 0) return '${m}m';
     return m == 0 ? '${h}h' : '${h}h ${m}m';
   }
+
+  // [NEW] Map a global POI index (0-based across the whole trip, in
+  // schedule order) for active-stop highlighting. We walk days/entries
+  // counting only POI entries.
+  bool _isPoiActive(ScheduleStop stop, int globalPoiIndex) =>
+      globalPoiIndex == _activeStopIndex;
 
   // ══════════════════════════════════════════════════════════
   // BUILD
@@ -684,11 +732,10 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── [CHANGED] Back + mode chip ─────────────────────
+                  // ── Back + mode chip ───────────────────────────
                   Row(
                     children: [
                       _frostedBtn(Icons.arrow_back_rounded, onTap: _onBackPressed),
-                      // [CHANGED] Mode-aware header chip
                       if (widget.viewMode == ItineraryViewMode.upcoming) ...[
                         const SizedBox(width: 10),
                         _headerChip(
@@ -709,7 +756,10 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'AI-Generated Route · ${_formatDate(widget.date)}',
+                    // [CHANGED] reflect multi-day in the eyebrow text.
+                    _schedule.totalDays > 1
+                        ? 'AI-Generated · ${_schedule.totalDays}-Day Plan · ${_formatDate(widget.date)}'
+                        : 'AI-Generated Route · ${_formatDate(widget.date)}',
                     style: GoogleFonts.outfit(
                       fontSize: 11, fontWeight: FontWeight.w700,
                       letterSpacing: 1.4, color: Colors.white.withOpacity(0.50),
@@ -771,7 +821,11 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
                           AppColors.oceanMid),
                       _hbBadge(Icons.schedule_rounded, _totalDuration, AppColors.goldLight),
                       _hbBadge(Icons.location_on_rounded,
-                          '${_orderedPois.length} stops', AppColors.greenLight),
+                          '${_schedule.totalStops} stops', AppColors.greenLight),
+                      // [NEW] days badge when multi-day
+                      if (_schedule.totalDays > 1)
+                        _hbBadge(Icons.calendar_month_rounded,
+                            '${_schedule.totalDays} days', AppColors.coral),
                     ],
                   ),
                 ],
@@ -798,7 +852,6 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     );
   }
 
-  // [NEW] Reusable header chip
   Widget _headerChip({
     required IconData icon,
     required String label,
@@ -853,10 +906,14 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   Widget _buildStatsRow() {
     final stats = [
       (Icons.location_on_rounded, AppColors.oceanTint, AppColors.oceanDeep,
-          '${_orderedPois.length}', 'Stops'),
+          '${_schedule.totalStops}', 'Stops'),
       (Icons.schedule_rounded, AppColors.goldTint, AppColors.gold, _totalDuration, 'Total'),
-      (Icons.flag_rounded, AppColors.greenTint, AppColors.green,
-          _formatTime(widget.time), 'Start'),
+      // [CHANGED] third cell: Days when multi-day, else Start time.
+      _schedule.totalDays > 1
+          ? (Icons.calendar_month_rounded, AppColors.coralTint, AppColors.coral,
+              '${_schedule.totalDays}', 'Days')
+          : (Icons.flag_rounded, AppColors.greenTint, AppColors.green,
+              _formatTime(widget.time), 'Start'),
     ];
 
     return Padding(
@@ -958,31 +1015,64 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   }
 
   // ══════════════════════════════════════════════════════════
-  // TIMELINE
+  // TIMELINE  [REWRITTEN] — now day-grouped with meal blocks
   // ══════════════════════════════════════════════════════════
   Widget _buildTimeline() {
     if (_isReordering) return _buildReorderList();
 
-    final pois  = _orderedPois;
     final items = <Widget>[];
+    int globalPoiIndex = 0; // counts POIs across all days for active state
 
-    for (int i = 0; i < pois.length; i++) {
-      final isFirst  = i == 0;
-      final isLast   = i == pois.length - 1;
-      final isActive = i == _activeStopIndex;
-      final isDone   = i < _activeStopIndex;
+    for (final day in _schedule.days) {
+      // Day header (always shown; gives even a 1-day plan a clean label)
+      items.add(_buildDayHeader(day));
+      items.add(const SizedBox(height: 4));
 
-      items.add(_buildStopRow(
-        poi: pois[i], index: i,
-        isFirst: isFirst, isLast: isLast,
-        isActive: isActive, isDone: isDone,
-        hasConnector: !isLast,
-      ));
+      final entries = day.entries;
+      for (int e = 0; e < entries.length; e++) {
+        final entry = entries[e];
+        final isLastInDay = e == entries.length - 1;
 
-      if (!isLast) {
-        final travelText = pois[i].distance.isNotEmpty ? pois[i].distance : '~15 min';
-        items.add(_buildConnector(isDone: isDone, travelTime: '${widget.transport} · $travelText'));
+        if (entry.isMeal) {
+          items.add(_buildMealRow(entry, hasConnector: !isLastInDay));
+        } else {
+          final stop = entry.stop!;
+          final isFirstOverall = globalPoiIndex == 0;
+          final isLastOverall =
+              globalPoiIndex == _schedule.totalStops - 1;
+          final isActive = _isPoiActive(stop, globalPoiIndex);
+          final isDone = globalPoiIndex < _activeStopIndex;
+
+          items.add(_buildStopRow(
+            entry: entry,
+            index: globalPoiIndex,
+            isFirst: isFirstOverall,
+            isLast: isLastOverall,
+            isActive: isActive,
+            isDone: isDone,
+          ));
+          globalPoiIndex++;
+        }
+
+        // Connector between entries in the same day
+        if (!isLastInDay) {
+          final next = entries[e + 1];
+          final travel = next.travelMinutes;
+          final label = travel > 0
+              ? '${widget.transport} · ${travel} min'
+              : '${widget.transport}';
+          items.add(_buildConnector(
+            isDone: entry.isPoi && (globalPoiIndex - 1) < _activeStopIndex,
+            travelTime: label,
+          ));
+        }
       }
+
+      items.add(const SizedBox(height: 18));
+    }
+
+    if (_schedule.unplaced.isNotEmpty) {
+      items.add(_buildUnplacedNote());
     }
 
     return Padding(
@@ -991,6 +1081,152 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     );
   }
 
+  // [NEW] Day section header.
+  Widget _buildDayHeader(ItineraryDay day) {
+    final start = day.firstStart;
+    final end = day.lastEnd;
+    return Container(
+      margin: const EdgeInsets.only(top: 4, bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [Color(0xFF0A3D5C), AppColors.oceanDeep],
+        ),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        boxShadow: shadowSm,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 30, height: 30,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
+            alignment: Alignment.center,
+            child: Text('${day.dayNumber}',
+              style: GoogleFonts.outfit(
+                fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('DAY ${day.dayNumber}',
+                style: GoogleFonts.outfit(
+                  fontSize: 10, fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2, color: Colors.white.withOpacity(0.60))),
+              Text(_formatDate(day.date),
+                style: GoogleFonts.outfit(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+            ],
+          ),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(AppRadius.full),
+            ),
+            child: Text(
+              '${_formatMinutes(start)} – ${_formatMinutes(end)}',
+              style: GoogleFonts.outfit(
+                fontSize: 10, fontWeight: FontWeight.w700,
+                color: Colors.white.withOpacity(0.90)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // [NEW] Meal break row (lunch / dinner).
+  Widget _buildMealRow(ItineraryEntry meal, {required bool hasConnector}) {
+    final isLunch = (meal.mealLabel ?? '').toLowerCase() == 'lunch';
+    final icon = isLunch ? Icons.lunch_dining_rounded : Icons.dinner_dining_rounded;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 36,
+          child: Center(
+            child: Container(
+              width: 30, height: 30,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.coralTint,
+                border: Border.all(color: AppColors.coral.withOpacity(0.35), width: 1.5),
+              ),
+              child: Icon(icon, size: 15, color: AppColors.coral),
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.coralTint,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              border: Border.all(color: AppColors.coral.withOpacity(0.18)),
+            ),
+            child: Row(
+              children: [
+                Text(meal.mealLabel ?? 'Meal',
+                  style: GoogleFonts.outfit(
+                    fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.coral)),
+                const Spacer(),
+                Text(
+                  '${_formatMinutes(meal.startMinutes)} – ${_formatMinutes(meal.endMinutes)}',
+                  style: GoogleFonts.outfit(
+                    fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.coral)),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // [NEW] Note for any POI the scheduler couldn't fit.
+  Widget _buildUnplacedNote() {
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.goldTint,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.gold.withOpacity(0.30)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline_rounded, size: 16, color: AppColors.gold),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Couldn't fit on schedule",
+                  style: GoogleFonts.outfit(
+                    fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.gold)),
+                const SizedBox(height: 2),
+                Text(
+                  _schedule.unplaced.map((s) => s.name).join(', ') +
+                      ' — opening hours leave no room. Try adding a day or trimming stays.',
+                  style: GoogleFonts.outfit(fontSize: 11, color: AppColors.text2, height: 1.4)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Reorder list — schedule still computed; shows day labels ──
   Widget _buildReorderList() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1009,7 +1245,9 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
                 const Icon(Icons.info_outline_rounded, size: 14, color: AppColors.oceanDeep),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('Long press and drag to reorder stops',
+                  child: Text(
+                    'Drag to reorder. The day-by-day plan and meal breaks '
+                    'rebuild automatically when you tap Done.',
                     style: GoogleFonts.outfit(fontSize: 12, color: AppColors.oceanDeep)),
                 ),
               ],
@@ -1025,6 +1263,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
                 if (newIndex > oldIndex) newIndex--;
                 final item = _orderedPois.removeAt(oldIndex);
                 _orderedPois.insert(newIndex, item);
+                _rebuildSchedule(); // [NEW] re-split after reorder
               });
             },
             proxyDecorator: (child, index, animation) => Material(
@@ -1111,13 +1350,12 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   }
 
   Widget _buildStopRow({
-    required PoiItem poi,
+    required ItineraryEntry entry,
     required int index,
     required bool isFirst,
     required bool isLast,
     required bool isActive,
     required bool isDone,
-    required bool hasConnector,
   }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1131,7 +1369,7 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
         const SizedBox(width: 14),
         Expanded(
           child: _buildStopCard(
-            poi: poi, index: index,
+            entry: entry, index: index,
             isActive: isActive, isDone: isDone, isLast: isLast,
           ),
         ),
@@ -1178,16 +1416,19 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   }
 
   Widget _buildStopCard({
-    required PoiItem poi,
+    required ItineraryEntry entry,
     required int index,
     required bool isActive,
     required bool isDone,
     required bool isLast,
   }) {
+    final poi = entry.stop!;
     final tags = <_Tag>[
       _Tag(poi.category,
           isActive ? AppColors.goldTint : AppColors.oceanTint,
           isActive ? AppColors.gold : AppColors.oceanDeep),
+      if (entry.wasAdjustedForHours)
+        const _Tag('⏰ Opens later', AppColors.goldTint, AppColors.gold),
       if (isDone)   const _Tag('Completed ✓', AppColors.greenTint, AppColors.green),
       if (isActive) const _Tag('📍 You are here', AppColors.goldTint, AppColors.gold),
       if (!isDone && !isActive && isLast)
@@ -1221,16 +1462,14 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
                     poi.imagePath,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => Container(
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft, end: Alignment.bottomRight,
-                          colors: poi.thumbGradient.length >= 2
-                              ? poi.thumbGradient
-                              : [poi.thumbGradient.first, poi.thumbGradient.first],
+                          colors: [AppColors.oceanDeep, AppColors.oceanMid],
                         ),
                       ),
-                      child: Icon(poi.thumbIcon, size: 26,
-                          color: Colors.white.withOpacity(0.80)),
+                      child: const Icon(Icons.place_rounded, size: 26,
+                          color: Colors.white),
                     ),
                   ),
                 ),
@@ -1247,7 +1486,9 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
                           letterSpacing: 1.0, color: AppColors.text3,
                         ),
                         children: [
-                          TextSpan(text: 'Stop ${index + 1} · ${_formatStopTime(index)}'),
+                          // [CHANGED] time now from the schedule entry
+                          TextSpan(text: 'Stop ${index + 1} · '
+                              '${_formatMinutes(entry.startMinutes)}'),
                           if (isActive) ...[
                             const TextSpan(text: ' · '),
                             TextSpan(
@@ -1267,7 +1508,9 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
                         fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text1,
                       )),
                     const SizedBox(height: 2),
-                    Text(poi.distance,
+                    // [CHANGED] show open–close window + arrival→leave
+                    Text(
+                      '${_formatMinutes(entry.startMinutes)} – ${_formatMinutes(entry.endMinutes)}',
                       style: GoogleFonts.outfit(fontSize: 12, color: AppColors.text2)),
                   ],
                 ),
@@ -1280,6 +1523,15 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
             const SizedBox(width: 4),
             Text('Stay: ${poi.stayMinutes} min',
               style: GoogleFonts.outfit(fontSize: 11, color: AppColors.text2)),
+            const SizedBox(width: 12),
+            const Icon(Icons.access_time_rounded, size: 12, color: AppColors.text3),
+            const SizedBox(width: 4),
+            // [NEW] surface the real opening hours on the card
+            Flexible(
+              child: Text(poi.openHours,
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(fontSize: 11, color: AppColors.text2)),
+            ),
           ]),
           const SizedBox(height: 8),
           Wrap(
@@ -1351,13 +1603,11 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
   }
 
   // ══════════════════════════════════════════════════════════
-  // BOTTOM CTA  [CHANGED] — mode-aware
+  // BOTTOM CTA — mode-aware (unchanged behaviour)
   // ══════════════════════════════════════════════════════════
   Widget _buildBottomCta(BuildContext context) {
     switch (widget.viewMode) {
       case ItineraryViewMode.inProgress:
-        // Same as generated: Map View + Start Navigation
-        // End Trip lives in screen10 (NavigationScreen)
         return _buildGeneratedBottomCta(context);
       case ItineraryViewMode.upcoming:
         return _buildStartTripBottomCta(context);
@@ -1367,7 +1617,6 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     }
   }
 
-  // ── Upcoming mode: Start Trip ──────────────────────────────
   Widget _buildStartTripBottomCta(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
@@ -1427,7 +1676,6 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
     );
   }
 
-  // ── Generated mode: Map View + Start Navigation (existing) ─
   Widget _buildGeneratedBottomCta(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
@@ -1440,7 +1688,6 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
       ),
       child: Row(
         children: [
-          // Map View
           Expanded(
             flex: 1,
             child: GestureDetector(
@@ -1468,8 +1715,6 @@ class _ItineraryResultScreenState extends State<ItineraryResultScreen>
             ),
           ),
           const SizedBox(width: 10),
-
-          // Start Navigation
           Expanded(
             flex: 2,
             child: AnimatedBuilder(

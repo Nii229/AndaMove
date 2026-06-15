@@ -114,7 +114,6 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
-
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -166,14 +165,20 @@ class _ProfileScreenState extends State<ProfileScreen>
   int _firestorePlacesCount = 0;
   int _firestoreVlogCount = 0;
   bool _statsLoaded = false;
+  Set<String> _firestoreTripIds = {};
 
   List<Color> _sceneThumbColors(StoryScene scene) {
     switch (scene) {
-      case StoryScene.beach:  return [const Color(0xFF1A6B9A), const Color(0xFF38BED6)];
-      case StoryScene.temple: return [const Color(0xFF0D2B3E), const Color(0xFF2E86AB)];
-      case StoryScene.jungle: return [const Color(0xFF2C5F3A), const Color(0xFF1A3D22)];
-      case StoryScene.sunset: return [const Color(0xFF6B1F4E), const Color(0xFFD45F1A)];
-      case StoryScene.market: return [const Color(0xFF1A100A), const Color(0xFF2A1505)];
+      case StoryScene.beach:
+        return [const Color(0xFF1A6B9A), const Color(0xFF38BED6)];
+      case StoryScene.temple:
+        return [const Color(0xFF0D2B3E), const Color(0xFF2E86AB)];
+      case StoryScene.jungle:
+        return [const Color(0xFF2C5F3A), const Color(0xFF1A3D22)];
+      case StoryScene.sunset:
+        return [const Color(0xFF6B1F4E), const Color(0xFFD45F1A)];
+      case StoryScene.market:
+        return [const Color(0xFF1A100A), const Color(0xFF2A1505)];
     }
   }
 
@@ -182,12 +187,16 @@ class _ProfileScreenState extends State<ProfileScreen>
       final user = _auth.currentUser;
       if (user == null) return;
 
-      // Count trips from Firestore
+      // Count trips from Firestore — exclude archived to match Trips page
       final tripsSnapshot = await _firestore
           .collection('users')
           .doc(user.uid)
           .collection('trips')
           .get();
+      final activeDocs = tripsSnapshot.docs.where(
+        (d) => (d.data()['status'] as String?) != 'archived',
+      );
+      final activeTripIds = activeDocs.map((d) => d.id).toSet();
 
       // Count saved POIs from Firestore
       final savedSnapshot = await _firestore
@@ -205,24 +214,28 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       // Populate AppStore saved vlogs list from Firestore (fire-and-forget)
       AppStore.loadSavedVlogsFromFirestore(
-        seedStories.map((s) => SavedVlogSummary(
-          id: s.id,
-          title: s.title,
-          location: s.location,
-          creatorName: s.creatorName,
-          creatorInitials: s.creatorInitials,
-          creatorAvatarColor: s.creatorAvatarColor,
-          totalDuration: s.totalDuration,
-          stopCount: s.stopCount,
-          tags: s.tags,
-          thumbColors: _sceneThumbColors(s.scene),
-          storyIndex: seedStories.indexOf(s),
-        )).toList(),
+        seedStories
+            .map(
+              (s) => SavedVlogSummary(
+                id: s.id,
+                title: s.title,
+                location: s.location,
+                creatorName: s.creatorName,
+                creatorInitials: s.creatorInitials,
+                creatorAvatarColor: s.creatorAvatarColor,
+                totalDuration: s.totalDuration,
+                stopCount: s.stopCount,
+                tags: s.tags,
+                thumbColors: _sceneThumbColors(s.scene),
+                storyIndex: seedStories.indexOf(s),
+              ),
+            )
+            .toList(),
       );
 
       if (mounted) {
         setState(() {
-          _firestoreTripCount = tripsSnapshot.docs.length;
+          _firestoreTripIds = activeTripIds;
           _firestorePlacesCount = savedSnapshot.docs.length;
           _firestoreVlogCount = savedVlogsSnapshot.docs.length;
           _statsLoaded = true;
@@ -477,10 +490,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       await ref.putFile(file);
       final url = await ref.getDownloadURL();
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({'photoUrl': url});
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update(
+        {'photoUrl': url},
+      );
 
       await user.updatePhotoURL(url);
 
@@ -495,13 +507,18 @@ class _ProfileScreenState extends State<ProfileScreen>
         setState(() => _uploadingPhoto = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Upload failed. Please try again.',
+            content: Text(
+              'Upload failed. Please try again.',
               style: GoogleFonts.outfit(
-                fontWeight: FontWeight.w600, color: Colors.white)),
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
             backgroundColor: AppColors.coral,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+              borderRadius: BorderRadius.circular(12),
+            ),
             margin: const EdgeInsets.all(16),
           ),
         );
@@ -546,20 +563,27 @@ class _ProfileScreenState extends State<ProfileScreen>
                   child: _uploadingPhoto
                       ? const Center(
                           child: CircularProgressIndicator(
-                            strokeWidth: 2.5, color: Colors.white))
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        )
                       : _profilePhotoUrl != null
-                          ? Image.network(
-                              _profilePhotoUrl!,
-                              fit: BoxFit.cover,
-                              width: 72,
-                              height: 72,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.person_rounded,
-                                size: 36, color: Colors.white),
-                            )
-                          : const Icon(
-                              Icons.person_rounded,
-                              size: 36, color: Colors.white),
+                      ? Image.network(
+                          _profilePhotoUrl!,
+                          fit: BoxFit.cover,
+                          width: 72,
+                          height: 72,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.person_rounded,
+                            size: 36,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.person_rounded,
+                          size: 36,
+                          color: Colors.white,
+                        ),
                 ),
               ),
               Positioned(
@@ -574,11 +598,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                         ? AppColors.gold.withOpacity(0.50)
                         : AppColors.gold,
                     border: Border.all(
-                      color: const Color(0xFF061018), width: 2),
+                      color: const Color(0xFF061018),
+                      width: 2,
+                    ),
                   ),
                   child: const Icon(
                     Icons.camera_alt_rounded,
-                    size: 11, color: Colors.white),
+                    size: 11,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ],
@@ -615,16 +643,25 @@ class _ProfileScreenState extends State<ProfileScreen>
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.gold.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(AppRadius.full),
-                      border: Border.all(color: AppColors.gold.withOpacity(0.30)),
+                      border: Border.all(
+                        color: AppColors.gold.withOpacity(0.30),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.military_tech_rounded, size: 13, color: AppColors.goldLight),
+                        const Icon(
+                          Icons.military_tech_rounded,
+                          size: 13,
+                          color: AppColors.goldLight,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           'Gold Explorer',
@@ -674,8 +711,21 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildStatsStripInline() {
-    final tripCount = _statsLoaded ? _firestoreTripCount : (3 + AppStore.followedTrips.length);
-    final visitedCount = _statsLoaded ? _firestorePlacesCount : AppStore.savedPois.length;
+    // Match the Trips page: 3 base mock trips + Firestore (excl. archived)
+    // + AppStore followed trips, de-duplicated by id.
+    final tripIds = <String>{
+      'trip_phuket_cultural',
+      'trip_phi_phi',
+      'trip_old_town',
+    };
+    for (final t in AppStore.followedTrips) {
+      tripIds.add(t.id);
+    }
+    tripIds.addAll(_firestoreTripIds);
+    final tripCount = tripIds.length;
+
+    // "Visited" = saved/favourited POIs (live from AppStore)
+    final visitedCount = AppStore.savedPois.length;
 
     final stats = [
       (tripCount.toString(), 'Trips'),
@@ -767,7 +817,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   iconBg: AppColors.oceanTint,
                   iconColor: AppColors.oceanDeep,
                   title: 'Saved Videos',
-                  countLabel: AppStore.savedVlogs.isEmpty && _firestoreVlogCount == 0
+                  countLabel:
+                      AppStore.savedVlogs.isEmpty && _firestoreVlogCount == 0
                       ? 'Bookmark vlogs from Explore'
                       : '${AppStore.savedVlogs.length} saved',
                   child: vlogs.isEmpty
@@ -779,7 +830,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                               return const LinearGradient(
                                 begin: Alignment.centerLeft,
                                 end: Alignment.centerRight,
-                                colors: [Colors.white, Colors.white, Colors.white, Colors.transparent],
+                                colors: [
+                                  Colors.white,
+                                  Colors.white,
+                                  Colors.white,
+                                  Colors.transparent,
+                                ],
                                 stops: [0.0, 0.7, 0.85, 1.0],
                               ).createShader(bounds);
                             },
@@ -812,7 +868,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                               return const LinearGradient(
                                 begin: Alignment.centerLeft,
                                 end: Alignment.centerRight,
-                                colors: [Colors.white, Colors.white, Colors.white, Colors.transparent],
+                                colors: [
+                                  Colors.white,
+                                  Colors.white,
+                                  Colors.white,
+                                  Colors.transparent,
+                                ],
                                 stops: [0.0, 0.7, 0.85, 1.0],
                               ).createShader(bounds);
                             },
@@ -917,8 +978,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     final thumbImage = _vlogThumbnailPath(vlog.title);
 
     return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(
-          builder: (_) => ExploreScreen(initialPage: vlog.storyIndex))),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ExploreScreen(initialPage: vlog.storyIndex),
+        ),
+      ),
       child: Container(
         width: 76,
         height: 76,
@@ -1019,9 +1084,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     final lower = vlogTitle.toLowerCase();
     if (lower.contains('kata')) return 'assets/images/cover_kata.jpg';
     if (lower.contains('buddha')) return 'assets/images/cover_bigBuddha.jpg';
-    if (lower.contains('jungle') || lower.contains('khao')) return 'assets/images/cover_jungle.jpg';
-    if (lower.contains('promthep') || lower.contains('sunset')) return 'assets/images/cover_promthep.jpg';
-    if (lower.contains('old town') || lower.contains('phuket town')) return 'assets/images/cover_oldTown.jpg';
+    if (lower.contains('jungle') || lower.contains('khao'))
+      return 'assets/images/cover_jungle.jpg';
+    if (lower.contains('promthep') || lower.contains('sunset'))
+      return 'assets/images/cover_promthep.jpg';
+    if (lower.contains('old town') || lower.contains('phuket town'))
+      return 'assets/images/cover_oldTown.jpg';
     return null;
   }
 
@@ -1989,21 +2057,25 @@ class _ProfileScreenState extends State<ProfileScreen>
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Expanded(child: _navItem(
-              items[0],
-              onTap: () => Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const HomeScreen()),
-                (route) => false,
+            Expanded(
+              child: _navItem(
+                items[0],
+                onTap: () => Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const HomeScreen()),
+                  (route) => false,
+                ),
               ),
-            )),
-            Expanded(child: _navItem(
-              items[1],
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ExploreScreen()),
+            ),
+            Expanded(
+              child: _navItem(
+                items[1],
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ExploreScreen()),
+                ),
               ),
-            )),
+            ),
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2074,21 +2146,28 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ],
             ),
-            Expanded(child: _navItem(
-              items[2],
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const TripsScreen()),
+            Expanded(
+              child: _navItem(
+                items[2],
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const TripsScreen()),
+                ),
               ),
-            )),
-            Expanded(child: _navItem(items[3], onTap: () {})), // already on Profile
+            ),
+            Expanded(
+              child: _navItem(items[3], onTap: () {}),
+            ), // already on Profile
           ],
         ),
       ),
     );
   }
 
-  Widget _navItem((IconData, String, bool) item, {required VoidCallback onTap}) {
+  Widget _navItem(
+    (IconData, String, bool) item, {
+    required VoidCallback onTap,
+  }) {
     final (icon, label, isActive) = item;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -2109,27 +2188,34 @@ class _ProfileScreenState extends State<ProfileScreen>
               color: isActive ? AppColors.oceanTint : Colors.transparent,
               borderRadius: BorderRadius.circular(AppRadius.full),
             ),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(icon, size: 22, color: isActive ? AppColors.oceanDeep : AppColors.text3),
-              const SizedBox(height: 3),
-              Text(
-                label.toUpperCase(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.outfit(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.8,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 22,
                   color: isActive ? AppColors.oceanDeep : AppColors.text3,
                 ),
-              ),
-            ]),
+                const SizedBox(height: 3),
+                Text(
+                  label.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                    color: isActive ? AppColors.oceanDeep : AppColors.text3,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
-    
+
   Widget _groupLabel(String text) {
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 8),

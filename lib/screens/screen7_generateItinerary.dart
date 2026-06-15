@@ -92,6 +92,7 @@ class PoiItem {
   final double latitude;
   final double longitude;
   int stayMinutes;
+  final String openHours; // ← NEW: real hours, drives scheduling
 
   PoiItem({
     required this.name,
@@ -106,6 +107,7 @@ class PoiItem {
     this.latitude = 0.0,
     this.longitude = 0.0,
     this.stayMinutes = 60,
+    this.openHours = 'Open 24 hours', // ← NEW: fail-open default
   });
 }
 
@@ -181,6 +183,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/kata_beach.jpg',
       latitude: 7.8206,
       longitude: 98.2985,
+      openHours: 'Open 24 hours',
     ),
     PoiItem(
       name: 'Patong Beach',
@@ -192,6 +195,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/patong_beach.jpg',
       latitude: 7.8907,
       longitude: 98.2963,
+      openHours: 'Open 24 hours',
     ),
     PoiItem(
       name: 'Freedom Beach',
@@ -203,6 +207,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/freedom_beach.jpg',
       latitude: 7.8773,
       longitude: 98.2745,
+      openHours: 'Open 24 hours',
     ),
     PoiItem(
       name: 'Surin Beach',
@@ -214,6 +219,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/surin_beach.jpg',
       latitude: 7.9772,
       longitude: 98.2786,
+      openHours: 'Open 24 hours',
     ),
     PoiItem(
       name: 'Nai Harn Beach',
@@ -225,6 +231,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/nai_harn_beach.jpg',
       latitude: 7.7747,
       longitude: 98.3060,
+      openHours: 'Open 24 hours',
     ),
     // Temples
     PoiItem(
@@ -237,6 +244,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/the_big_buddha.jpg',
       latitude: 7.8276,
       longitude: 98.3120,
+      openHours: '8:00 AM - 7:30 PM',
     ),
     PoiItem(
       name: 'Wat Chalong',
@@ -248,6 +256,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/wat_chalong.jpg',
       latitude: 7.8466,
       longitude: 98.3376,
+      openHours: '7:00 AM - 5:00 PM',
     ),
     // Nature
     PoiItem(
@@ -260,6 +269,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/phuket_elephant_sanctuary.jpg',
       latitude: 7.9519,
       longitude: 98.3700,
+      openHours: '9:00 AM - 5:00 PM',
     ),
     PoiItem(
       name: 'Sirinat Natl Park',
@@ -271,6 +281,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/sirinat_national_park.jpg',
       latitude: 8.1050,
       longitude: 98.2950,
+      openHours: '8:00 AM - 6:00 PM',
     ),
     PoiItem(
       name: 'Koh Sirey',
@@ -282,6 +293,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/koh_sirey.jpg',
       latitude: 7.8939,
       longitude: 98.4203,
+      openHours: 'Open 24 hours',
     ),
     // Culture
     PoiItem(
@@ -294,6 +306,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/old_phuket_town.jpg',
       latitude: 7.8841,
       longitude: 98.3880,
+      openHours: 'Open 24 hours',
     ),
     PoiItem(
       name: 'Phuket Fantasea',
@@ -305,6 +318,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/phuket_fantasea.jpg',
       latitude: 7.9512,
       longitude: 98.2862,
+      openHours: '5:30 PM - 11:30 PM',
     ),
     // Food
     PoiItem(
@@ -317,6 +331,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/rawai_seafood_market.jpg',
       latitude: 7.7757,
       longitude: 98.3265,
+      openHours: '9:00 AM - 9:00 PM',
     ),
     PoiItem(
       name: 'Walking Street',
@@ -328,6 +343,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/phuket_town_walking_street.jpg',
       latitude: 7.8838,
       longitude: 98.3877,
+      openHours: 'Sun 4:00 PM - 10:00 PM',
     ),
     PoiItem(
       name: 'Blue Elephant',
@@ -339,6 +355,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/blue_elephant_restaurant.jpg',
       latitude: 7.8830,
       longitude: 98.3835,
+      openHours: '11:30 AM - 10:00 PM',
     ),
     // Adventure
     PoiItem(
@@ -351,6 +368,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/tiger_kingdom.jpg',
       latitude: 7.9214,
       longitude: 98.3573,
+      openHours: '9:00 AM - 6:00 PM',
     ),
     PoiItem(
       name: 'ATV & Zipline',
@@ -362,6 +380,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/atv_&_zipline.jpg',
       latitude: 7.9000,
       longitude: 98.3500,
+      openHours: '8:00 AM - 5:00 PM',
     ),
     PoiItem(
       name: 'Phi Phi Day Trip',
@@ -373,6 +392,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/phi_phi_island.jpg',
       latitude: 7.7407,
       longitude: 98.7784,
+      openHours: '7:30 AM - 6:00 PM',
     ),
     // Nightlife
     PoiItem(
@@ -385,6 +405,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/bangla_road.jpg',
       latitude: 7.8930,
       longitude: 98.2965,
+      openHours: '6:00 PM - Late',
     ),
     PoiItem(
       name: 'Illuzion Club',
@@ -396,6 +417,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/illuzion_club.jpg',
       latitude: 7.8925,
       longitude: 98.2960,
+      openHours: '9:00 PM - Late',
     ),
     // Heritage
     PoiItem(
@@ -408,6 +430,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/thalang_national_museum.jpg',
       latitude: 8.0010,
       longitude: 98.3360,
+      openHours: '9:00 AM - 4:00 PM',
     ),
     // Viewpoints
     PoiItem(
@@ -420,6 +443,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/promthep_cape.jpg',
       latitude: 7.7625,
       longitude: 98.3050,
+      openHours: 'Open 24 hours',
     ),
     PoiItem(
       name: 'Karon Viewpoint',
@@ -431,6 +455,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/karon_viewpoint.jpg',
       latitude: 7.8076,
       longitude: 98.3050,
+      openHours: 'Open 24 hours',
     ),
     // Attraction + Shopping
     PoiItem(
@@ -443,6 +468,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/phuket_aquarium.jpg',
       latitude: 7.8160,
       longitude: 98.4030,
+      openHours: '8:30 AM - 4:30 PM',
     ),
     PoiItem(
       name: 'Jungceylon',
@@ -454,6 +480,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
       imagePath: 'assets/images/jungceylon.jpg',
       latitude: 7.8920,
       longitude: 98.2970,
+      openHours: '11:00 AM - 10:00 PM',
     ),
   ];
 
@@ -485,6 +512,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
                 'assets/images/${p.name.toLowerCase().replaceAll(' ', '_')}.jpg',
             isSavedPoi: true,
             checked: false,
+            openHours: p.openHours, // ← NEW
           ),
         )
         .toList();
@@ -591,6 +619,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
           imagePath: imagePath,
           latitude: (d['latitude'] as num?)?.toDouble() ?? 0.0,
           longitude: (d['longitude'] as num?)?.toDouble() ?? 0.0,
+          openHours: d['openHours'] as String? ?? 'Open 24 hours', // ← NEW
         );
       }).toList();
 
@@ -821,10 +850,15 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
 
           final optimized = order.map((i) => checked[i]).toList();
 
+          // [NEW] Parallel list of REAL travel minutes into each stop.
+          final travelMinutes = List<int>.filled(optimized.length, 0);
+
           // First stop: travel time from user location
           final firstEl = rows[0]['elements'][order.first + 1];
           if (firstEl['status'] == 'OK') {
             optimized.first.distance = firstEl['duration']['text'] as String;
+            travelMinutes[0] =
+                ((firstEl['duration']['value'] as int) / 60).round();
           }
           // Subsequent stops
           for (int i = 1; i < optimized.length; i++) {
@@ -833,6 +867,8 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
             final el = rows[fromIdx]['elements'][toIdx];
             if (el['status'] == 'OK') {
               optimized[i].distance = el['duration']['text'] as String;
+              travelMinutes[i] =
+                  ((el['duration']['value'] as int) / 60).round();
             }
           }
           optimized.last.distance = optimized.last.distance.isEmpty ? 'Last stop' : optimized.last.distance;
@@ -848,6 +884,7 @@ class _GenerateItineraryScreenState extends State<GenerateItineraryScreen>
                   selectedPois: optimized,
                   date: _selectedDate,
                   time: _selectedTime,
+                  travelMinutes: travelMinutes, // ← NEW
                 ),
               ),
             );
