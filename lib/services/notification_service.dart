@@ -40,8 +40,8 @@ class NotificationService {
     await _plugin.initialize(settings: settings);
 
     await _plugin
-        .resolvePlatformSpecificImplementation
-            AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation;
+            AndroidFlutterLocalNotificationsPlugin()
         ?.requestNotificationsPermission();
 
     _initialised = true;
