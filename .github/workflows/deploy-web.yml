@@ -33,6 +33,15 @@ jobs:
       - name: Enable web support
         run: flutter config --enable-web
 
+      - name: Create placeholder video assets
+        run: |
+          mkdir -p assets/videos
+          for f in kata_beach big_buddha khao_phra_thaeo promthep_cave old_phuket_town; do
+            if [ ! -f "assets/videos/$f.mov" ]; then
+              touch "assets/videos/$f.mov"
+            fi
+          done
+
       - name: Build web release
         run: flutter build web --release --base-href "/AndaMove/"
 
